@@ -1,0 +1,22 @@
+# Binaries
+*.exe
+cyan-birthdays-*
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+/dist/
+
+# Logs
+*.log
