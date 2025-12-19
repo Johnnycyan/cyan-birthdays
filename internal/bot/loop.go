@@ -17,6 +17,22 @@ func (b *Bot) startBirthdayLoop() {
 	// Run immediately on start
 	b.processBirthdays()
 
+	// Calculate time until next hour
+	now := time.Now()
+	nextHour := now.Truncate(time.Hour).Add(time.Hour)
+	timeToNextHour := time.Until(nextHour)
+	
+	slog.Info("Scheduling next birthday check", "next_check", nextHour.Format("15:04:05"), "wait_duration", timeToNextHour.String())
+
+	// Wait until the top of the next hour
+	select {
+	case <-b.stopCh:
+		slog.Info("Birthday loop stopped before first scheduled run")
+		return
+	case <-time.After(timeToNextHour):
+		b.processBirthdays()
+	}
+
 	// Then run every hour at the top of the hour
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
@@ -26,7 +42,8 @@ func (b *Bot) startBirthdayLoop() {
 		case <-b.stopCh:
 			slog.Info("Birthday loop stopped")
 			return
-		case <-ticker.C:
+		case t := <-ticker.C:
+			slog.Debug("Birthday ticker fired", "time", t.Format("15:04:05"))
 			b.processBirthdays()
 		}
 	}
@@ -35,6 +52,9 @@ func (b *Bot) startBirthdayLoop() {
 // processBirthdays checks all guilds for birthdays to announce
 func (b *Bot) processBirthdays() {
 	ctx := context.Background()
+	now := time.Now()
+	
+	slog.Info("Processing birthdays", "current_time_utc", now.UTC().Format("2006-01-02 15:04:05"))
 
 	// Get all guilds with setup complete
 	guilds, err := b.repo.GetAllSetupGuilds(ctx)
@@ -43,18 +63,23 @@ func (b *Bot) processBirthdays() {
 		return
 	}
 
-	slog.Debug("Processing birthdays", "guild_count", len(guilds))
+	slog.Debug("Processing guilds", "guild_count", len(guilds))
 
 	for _, gs := range guilds {
 		b.processGuildBirthdays(ctx, gs)
 	}
+	
+	slog.Debug("Birthday processing complete")
 }
 
 // processGuildBirthdays processes birthdays for a single guild
 func (b *Bot) processGuildBirthdays(ctx context.Context, gs database.GuildSettings) {
 	if gs.ChannelID == nil || gs.RoleID == nil {
+		slog.Debug("Guild missing channel or role", "guild_id", gs.GuildID, "has_channel", gs.ChannelID != nil, "has_role", gs.RoleID != nil)
 		return
 	}
+
+	slog.Debug("Processing guild birthdays", "guild_id", gs.GuildID, "announcement_hour", gs.TimeUTC, "default_tz", gs.DefaultTimezone)
 
 	// Get all birthdays for this guild
 	birthdays, err := b.repo.GetAllGuildBirthdays(ctx, gs.GuildID)
@@ -62,6 +87,8 @@ func (b *Bot) processGuildBirthdays(ctx context.Context, gs database.GuildSettin
 		slog.Error("Failed to get birthdays for guild", "guild_id", gs.GuildID, "error", err)
 		return
 	}
+
+	slog.Debug("Found birthdays in guild", "guild_id", gs.GuildID, "count", len(birthdays))
 
 	guild, err := b.session.State.Guild(gs.GuildID)
 	if err != nil {
@@ -83,6 +110,8 @@ func (b *Bot) processGuildBirthdays(ctx context.Context, gs database.GuildSettin
 
 // processMemberBirthday checks if a member should be announced
 func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettings, bd database.MemberBirthday, guild *discordgo.Guild) {
+	slog.Debug("Checking member birthday", "guild_id", gs.GuildID, "user_id", bd.UserID, "month", bd.Month, "day", bd.Day, "timezone", bd.Timezone)
+	
 	// Check if it's their birthday in their timezone
 	isBirthday, err := timezone.IsBirthdayToday(bd.Month, bd.Day, bd.Timezone)
 	if err != nil {
@@ -90,6 +119,8 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 		// Fall back to UTC
 		isBirthday, _ = timezone.IsBirthdayToday(bd.Month, bd.Day, "UTC")
 	}
+
+	slog.Debug("Birthday check result", "user_id", bd.UserID, "is_birthday", isBirthday)
 
 	if !isBirthday {
 		return
@@ -102,9 +133,13 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 		return
 	}
 
+	slog.Debug("Announcement check", "user_id", bd.UserID, "should_announce", shouldAnnounce, "configured_hour", gs.TimeUTC, "user_tz", bd.Timezone)
+
 	if !shouldAnnounce {
 		return
 	}
+
+	slog.Info("Processing birthday announcement", "guild_id", gs.GuildID, "user_id", bd.UserID)
 
 	// Get the member
 	member, err := b.session.GuildMember(gs.GuildID, bd.UserID)
@@ -139,6 +174,7 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 
 	if hasRole {
 		// Already announced today
+		slog.Debug("Member already has birthday role, skipping", "user_id", bd.UserID)
 		return
 	}
 

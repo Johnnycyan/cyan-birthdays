@@ -1,6 +1,7 @@
 package timezone
 
 import (
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -162,16 +163,22 @@ func GetLocalDate(ianaName string) (month, day int, err error) {
 func IsBirthdayToday(month, day int, ianaName string) (bool, error) {
 	currentMonth, currentDay, err := GetLocalDate(ianaName)
 	if err != nil {
+		slog.Debug("IsBirthdayToday error", "timezone", ianaName, "error", err)
 		return false, err
 	}
-	return currentMonth == month && currentDay == day, nil
+	result := currentMonth == month && currentDay == day
+	slog.Debug("IsBirthdayToday", "timezone", ianaName, "current", currentMonth*100+currentDay, "birthday", month*100+day, "result", result)
+	return result, nil
 }
 
 // ShouldAnnounce checks if we should announce now (user's local hour matches target hour)
 func ShouldAnnounce(targetHour int, userTimezone string) (bool, error) {
 	currentHour, err := GetLocalHour(userTimezone)
 	if err != nil {
+		slog.Debug("ShouldAnnounce error", "timezone", userTimezone, "error", err)
 		return false, err
 	}
-	return currentHour == targetHour, nil
+	result := currentHour == targetHour
+	slog.Debug("ShouldAnnounce", "timezone", userTimezone, "currentHour", currentHour, "targetHour", targetHour, "result", result)
+	return result, nil
 }
