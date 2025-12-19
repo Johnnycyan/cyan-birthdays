@@ -233,7 +233,7 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 	// Build embed
 	embed := &discordgo.MessageEmbed{
 		Title: fmt.Sprintf("🎂 Upcoming Birthdays (Next %d Days)", days),
-		Color: 0xFF69B4, // Hot pink
+		Color: 0x00D9FF, // Cyan
 	}
 
 	// Group by date
