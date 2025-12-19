@@ -39,9 +39,40 @@ CREATE TABLE IF NOT EXISTS member_birthdays (
 CREATE INDEX IF NOT EXISTS idx_birthdays_date ON member_birthdays(month, day);
 `
 
+// migrations to add new columns to existing tables
+const migrations = `
+-- Add european_date_format column if it doesn't exist
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name='guild_settings' AND column_name='european_date_format') THEN
+        ALTER TABLE guild_settings ADD COLUMN european_date_format BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;
+
+-- Add use_24h_time column if it doesn't exist
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name='guild_settings' AND column_name='use_24h_time') THEN
+        ALTER TABLE guild_settings ADD COLUMN use_24h_time BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;
+`
+
 // Migrate runs the database migrations
 func Migrate(pool *pgxpool.Pool) error {
 	ctx := context.Background()
-	_, err := pool.Exec(ctx, schema)
-	return err
+	
+	// Create tables
+	if _, err := pool.Exec(ctx, schema); err != nil {
+		return err
+	}
+	
+	// Run migrations for new columns
+	if _, err := pool.Exec(ctx, migrations); err != nil {
+		return err
+	}
+	
+	return nil
 }
