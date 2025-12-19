@@ -266,12 +266,14 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 		})
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Embeds: []*discordgo.MessageEmbed{embed},
 		},
-	})
+	}); err != nil {
+		slog.Error("Failed to respond with upcoming birthdays embed", "error", err)
+	}
 }
 
 // handleBdsetCommand handles /bdset subcommands
@@ -745,23 +747,27 @@ func (b *Bot) checkSetupComplete(ctx context.Context, guildID string) {
 // Helper functions
 
 func respondEphemeral(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: content,
 			Flags:   discordgo.MessageFlagsEphemeral,
 		},
-	})
+	}); err != nil {
+		slog.Error("Failed to send ephemeral response", "error", err, "content", content)
+	}
 }
 
 func respondError(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: "❌ " + message,
 			Flags:   discordgo.MessageFlagsEphemeral,
 		},
-	})
+	}); err != nil {
+		slog.Error("Failed to send error response", "error", err, "message", message)
+	}
 }
 
 func formatChannelSetting(channelID *string) string {
