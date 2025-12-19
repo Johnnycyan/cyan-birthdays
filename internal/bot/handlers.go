@@ -175,7 +175,12 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 	}
 
 	// Filter to upcoming birthdays
-	now := time.Now()
+	now := time.Now().UTC()
+	// Truncate to start of day for accurate date comparison
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	
+	slog.Debug("Checking upcoming birthdays", "today", today.Format("2006-01-02"), "totalBirthdays", len(birthdays))
+	
 	type upcomingBday struct {
 		UserID   string
 		Month    int
@@ -186,12 +191,17 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 
 	var upcoming []upcomingBday
 	for _, bd := range birthdays {
-		// Calculate days until birthday
+		// Calculate days until birthday using date-only comparison
 		thisYearBday := time.Date(now.Year(), time.Month(bd.Month), bd.Day, 0, 0, 0, 0, time.UTC)
-		if thisYearBday.Before(now) {
+		
+		// If birthday this year is before today, use next year
+		if thisYearBday.Before(today) {
 			thisYearBday = thisYearBday.AddDate(1, 0, 0)
 		}
-		daysAway := int(thisYearBday.Sub(now).Hours() / 24)
+		
+		daysAway := int(thisYearBday.Sub(today).Hours() / 24)
+		
+		slog.Debug("Checking birthday", "userID", bd.UserID, "month", bd.Month, "day", bd.Day, "thisYearBday", thisYearBday.Format("2006-01-02"), "daysAway", daysAway)
 		
 		if daysAway <= days {
 			upcoming = append(upcoming, upcomingBday{
@@ -203,6 +213,8 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 			})
 		}
 	}
+
+	slog.Debug("Upcoming birthdays filtered", "count", len(upcoming))
 
 	if len(upcoming) == 0 {
 		respondEphemeral(s, i, fmt.Sprintf("No upcoming birthdays in the next %d days.", days))
