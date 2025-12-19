@@ -1,18 +1,18 @@
 version: '3.8'
 
 services:
-  bot:
+  cyan-birthdays-bot:
     image: ghcr.io/johnnycyan/cyan-birthdays:latest
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@cyan-birthdays-db:5432/${POSTGRES_DB}?sslmode=disable
       - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
-      db:
+      cyan-birthdays-db:
         condition: service_healthy
     restart: unless-stopped
 
-  db:
+  cyan-birthdays-db:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=${POSTGRES_USER}

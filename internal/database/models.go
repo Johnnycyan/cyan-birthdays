@@ -18,6 +18,8 @@ type GuildSettings struct {
 	AllowRoleMention   bool
 	RequiredRoleID     *string
 	DefaultTimezone    string
+	EuropeanDateFormat bool
+	Use24hTime         bool
 	SetupComplete      bool
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
@@ -51,13 +53,14 @@ func (r *Repository) GetGuildSettings(ctx context.Context, guildID string) (*Gui
 	err := r.pool.QueryRow(ctx, `
 		SELECT guild_id, channel_id, role_id, time_utc, message_with_year, 
 		       message_without_year, allow_role_mention, required_role_id,
-		       default_timezone, setup_complete, created_at, updated_at
+		       default_timezone, european_date_format, use_24h_time,
+		       setup_complete, created_at, updated_at
 		FROM guild_settings WHERE guild_id = $1
 	`, guildID).Scan(
 		&gs.GuildID, &gs.ChannelID, &gs.RoleID, &gs.TimeUTC,
 		&gs.MessageWithYear, &gs.MessageWithoutYear, &gs.AllowRoleMention,
-		&gs.RequiredRoleID, &gs.DefaultTimezone, &gs.SetupComplete,
-		&gs.CreatedAt, &gs.UpdatedAt,
+		&gs.RequiredRoleID, &gs.DefaultTimezone, &gs.EuropeanDateFormat,
+		&gs.Use24hTime, &gs.SetupComplete, &gs.CreatedAt, &gs.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -185,6 +188,30 @@ func (r *Repository) UpdateGuildDefaultTimezone(ctx context.Context, guildID, ti
 	return err
 }
 
+// UpdateGuildEuropeanDateFormat sets the european date format preference
+func (r *Repository) UpdateGuildEuropeanDateFormat(ctx context.Context, guildID string, european bool) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO guild_settings (guild_id, european_date_format, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (guild_id) DO UPDATE SET
+		    european_date_format = EXCLUDED.european_date_format,
+		    updated_at = NOW()
+	`, guildID, european)
+	return err
+}
+
+// UpdateGuildUse24hTime sets the 24-hour time format preference
+func (r *Repository) UpdateGuildUse24hTime(ctx context.Context, guildID string, use24h bool) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO guild_settings (guild_id, use_24h_time, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (guild_id) DO UPDATE SET
+		    use_24h_time = EXCLUDED.use_24h_time,
+		    updated_at = NOW()
+	`, guildID, use24h)
+	return err
+}
+
 // UpdateGuildSetupComplete marks setup as complete
 func (r *Repository) UpdateGuildSetupComplete(ctx context.Context, guildID string, complete bool) error {
 	_, err := r.pool.Exec(ctx, `
@@ -205,7 +232,8 @@ func (r *Repository) GetAllSetupGuilds(ctx context.Context) ([]GuildSettings, er
 	rows, err := r.pool.Query(ctx, `
 		SELECT guild_id, channel_id, role_id, time_utc, message_with_year, 
 		       message_without_year, allow_role_mention, required_role_id,
-		       default_timezone, setup_complete, created_at, updated_at
+		       default_timezone, european_date_format, use_24h_time,
+		       setup_complete, created_at, updated_at
 		FROM guild_settings WHERE setup_complete = true
 	`)
 	if err != nil {
@@ -219,8 +247,8 @@ func (r *Repository) GetAllSetupGuilds(ctx context.Context) ([]GuildSettings, er
 		if err := rows.Scan(
 			&gs.GuildID, &gs.ChannelID, &gs.RoleID, &gs.TimeUTC,
 			&gs.MessageWithYear, &gs.MessageWithoutYear, &gs.AllowRoleMention,
-			&gs.RequiredRoleID, &gs.DefaultTimezone, &gs.SetupComplete,
-			&gs.CreatedAt, &gs.UpdatedAt,
+			&gs.RequiredRoleID, &gs.DefaultTimezone, &gs.EuropeanDateFormat,
+			&gs.Use24hTime, &gs.SetupComplete, &gs.CreatedAt, &gs.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

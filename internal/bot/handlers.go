@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Johnnycyan/cyan-birthdays/internal/database"
 	"github.com/Johnnycyan/cyan-birthdays/internal/timezone"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jackc/pgx/v5"
@@ -43,54 +45,73 @@ func (b *Bot) handleBirthdayCommand(s *discordgo.Session, i *discordgo.Interacti
 	}
 }
 
-// handleBirthdaySet opens a modal for setting birthday
+// handleBirthdaySet sets a user's birthday from command options
 func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// Get default timezone for the guild
-	defaultTZ := "UTC"
+	opts := i.ApplicationCommandData().Options[0].Options
+	
+	var dateStr, tzStr string
+	for _, opt := range opts {
+		switch opt.Name {
+		case "birthday":
+			dateStr = opt.StringValue()
+		case "timezone":
+			tzStr = opt.StringValue()
+		}
+	}
+
+	// Get default timezone if not provided
+	if tzStr == "" {
+		ctx := context.Background()
+		gs, err := b.repo.GetGuildSettings(ctx, i.GuildID)
+		if err == nil && gs != nil {
+			tzStr = gs.DefaultTimezone
+		} else {
+			tzStr = "UTC"
+		}
+	}
+
+	// Parse the date
+	month, day, year, err := parseDate(dateStr)
+	if err != nil {
+		respondError(s, i, "Invalid date format. Use formats like: 9/24, September 24, or 9/24/2002")
+		return
+	}
+
+	// Validate timezone
+	if !timezone.ValidateTimezone(tzStr) {
+		respondError(s, i, fmt.Sprintf("Invalid timezone: %s. Please select from the autocomplete list.", tzStr))
+		return
+	}
+
+	// Save to database
 	ctx := context.Background()
-	gs, err := b.repo.GetGuildSettings(ctx, i.GuildID)
-	if err == nil && gs != nil {
-		defaultTZ = gs.DefaultTimezone
+	mb := &database.MemberBirthday{
+		GuildID:  i.GuildID,
+		UserID:   i.Member.User.ID,
+		Month:    month,
+		Day:      day,
+		Year:     year,
+		Timezone: tzStr,
+	}
+	
+	if err := b.repo.SetMemberBirthday(ctx, mb); err != nil {
+		slog.Error("Failed to save birthday", "error", err)
+		respondError(s, i, "Failed to save your birthday")
+		return
 	}
 
-	modal := discordgo.InteractionResponseData{
-		CustomID: "birthday_set_modal",
-		Title:    "Set Your Birthday",
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID:    "birthday_date",
-						Label:       "Birthday (e.g., 9/24 or September 24, 2002)",
-						Style:       discordgo.TextInputShort,
-						Placeholder: "Month/Day or Month Day, Year",
-						Required:    true,
-						MaxLength:   50,
-					},
-				},
-			},
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID:    "birthday_timezone",
-						Label:       "Timezone (IANA format, e.g., America/Detroit)",
-						Style:       discordgo.TextInputShort,
-						Placeholder: defaultTZ,
-						Required:    false,
-						MaxLength:   50,
-						Value:       defaultTZ,
-					},
-				},
-			},
-		},
+	// Format confirmation
+	dateDisplay := time.Month(month).String() + " " + strconv.Itoa(day)
+	if year != nil {
+		dateDisplay += ", " + strconv.Itoa(*year)
 	}
 
-	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseModal,
-		Data: &modal,
-	}); err != nil {
-		slog.Error("Failed to show birthday modal", "error", err)
-	}
+	currentTime, _ := timezone.GetCurrentTime(tzStr)
+	
+	respondEphemeral(s, i, fmt.Sprintf(
+		"🎂 Your birthday has been set to **%s**!\nTimezone: %s (current time: %s)",
+		dateDisplay, tzStr, currentTime.Format("3:04 PM"),
+	))
 }
 
 // handleBirthdayRemove shows confirmation for removing birthday
@@ -263,6 +284,10 @@ func (b *Bot) handleBdsetCommand(s *discordgo.Session, i *discordgo.InteractionC
 		b.handleBdsetStop(s, i)
 	case "interactive":
 		b.handleBdsetInteractive(s, i)
+	case "dateformat":
+		b.handleBdsetDateFormat(s, i)
+	case "timeformat":
+		b.handleBdsetTimeFormat(s, i)
 	}
 }
 
@@ -311,58 +336,40 @@ func (b *Bot) handleBdsetTime(s *discordgo.Session, i *discordgo.InteractionCrea
 	respondEphemeral(s, i, fmt.Sprintf("✅ Birthday announcements will be sent at %02d:00 (in each user's timezone)", hour))
 }
 
-// handleBdsetMsgWithYear opens modal for message with year
+// handleBdsetMsgWithYear sets the birthday message with year from command
 func (b *Bot) handleBdsetMsgWithYear(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	modal := discordgo.InteractionResponseData{
-		CustomID: "bdset_msgwithyear_modal",
-		Title:    "Birthday Message (With Age)",
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID:    "message",
-						Label:       "Message (use {mention}, {name}, {new_age})",
-						Style:       discordgo.TextInputParagraph,
-						Placeholder: "{mention} has turned {new_age}, happy birthday!",
-						Required:    true,
-						MaxLength:   500,
-					},
-				},
-			},
-		},
+	opts := i.ApplicationCommandData().Options[0].Options
+	message := opts[0].StringValue()
+
+	ctx := context.Background()
+	if err := b.repo.UpdateGuildMessageWithYear(ctx, i.GuildID, message); err != nil {
+		respondError(s, i, "Failed to update message")
+		return
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseModal,
-		Data: &modal,
-	})
+	b.checkSetupComplete(ctx, i.GuildID)
+
+	// Show preview
+	preview := formatMessage(message, i.Member.User.Username, i.Member.User.ID, intPtr(25))
+	respondEphemeral(s, i, fmt.Sprintf("✅ Message updated! Preview:\n> %s", preview))
 }
 
-// handleBdsetMsgWithoutYear opens modal for message without year
+// handleBdsetMsgWithoutYear sets the birthday message without year from command
 func (b *Bot) handleBdsetMsgWithoutYear(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	modal := discordgo.InteractionResponseData{
-		CustomID: "bdset_msgwithoutyear_modal",
-		Title:    "Birthday Message (Without Age)",
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID:    "message",
-						Label:       "Message (use {mention}, {name})",
-						Style:       discordgo.TextInputParagraph,
-						Placeholder: "Happy birthday {mention}!",
-						Required:    true,
-						MaxLength:   500,
-					},
-				},
-			},
-		},
+	opts := i.ApplicationCommandData().Options[0].Options
+	message := opts[0].StringValue()
+
+	ctx := context.Background()
+	if err := b.repo.UpdateGuildMessageWithoutYear(ctx, i.GuildID, message); err != nil {
+		respondError(s, i, "Failed to update message")
+		return
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseModal,
-		Data: &modal,
-	})
+	b.checkSetupComplete(ctx, i.GuildID)
+
+	// Show preview
+	preview := formatMessage(message, i.Member.User.Username, i.Member.User.ID, nil)
+	respondEphemeral(s, i, fmt.Sprintf("✅ Message updated! Preview:\n> %s", preview))
 }
 
 // handleBdsetRoleMention toggles role mention permission
@@ -518,6 +525,16 @@ func (b *Bot) handleBdsetSettings(s *discordgo.Session, i *discordgo.Interaction
 				Inline: true,
 			},
 			{
+				Name:   "Date Format",
+				Value:  formatDateFormatSetting(gs.EuropeanDateFormat),
+				Inline: true,
+			},
+			{
+				Name:   "Time Format",
+				Value:  formatTimeFormatSetting(gs.Use24hTime),
+				Inline: true,
+			},
+			{
 				Name:   "Setup Complete",
 				Value:  formatBool(gs.SetupComplete),
 				Inline: true,
@@ -616,6 +633,32 @@ func (b *Bot) handleBdsetInteractive(s *discordgo.Session, i *discordgo.Interact
 					},
 				},
 			},
+			discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.TextInput{
+						CustomID:    "date_format",
+						Label:       "European date format DD/MM? (yes/no)",
+						Style:       discordgo.TextInputShort,
+						Placeholder: "no",
+						Required:    false,
+						MaxLength:   3,
+						Value:       "no",
+					},
+				},
+			},
+			discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.TextInput{
+						CustomID:    "time_format",
+						Label:       "24-hour time? (yes/no)",
+						Style:       discordgo.TextInputShort,
+						Placeholder: "no",
+						Required:    false,
+						MaxLength:   3,
+						Value:       "no",
+					},
+				},
+			},
 		},
 	}
 
@@ -623,6 +666,42 @@ func (b *Bot) handleBdsetInteractive(s *discordgo.Session, i *discordgo.Interact
 		Type: discordgo.InteractionResponseModal,
 		Data: &modal,
 	})
+}
+
+// handleBdsetDateFormat sets European date format preference
+func (b *Bot) handleBdsetDateFormat(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	opts := i.ApplicationCommandData().Options[0].Options
+	european := opts[0].BoolValue()
+
+	ctx := context.Background()
+	if err := b.repo.UpdateGuildEuropeanDateFormat(ctx, i.GuildID, european); err != nil {
+		respondError(s, i, "Failed to update setting")
+		return
+	}
+
+	if european {
+		respondEphemeral(s, i, "✅ Date format set to European style (DD/MM/YYYY)")
+	} else {
+		respondEphemeral(s, i, "✅ Date format set to American style (MM/DD/YYYY)")
+	}
+}
+
+// handleBdsetTimeFormat sets 24-hour time format preference
+func (b *Bot) handleBdsetTimeFormat(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	opts := i.ApplicationCommandData().Options[0].Options
+	use24h := opts[0].BoolValue()
+
+	ctx := context.Background()
+	if err := b.repo.UpdateGuildUse24hTime(ctx, i.GuildID, use24h); err != nil {
+		respondError(s, i, "Failed to update setting")
+		return
+	}
+
+	if use24h {
+		respondEphemeral(s, i, "✅ Time format set to 24-hour (e.g., 14:00)")
+	} else {
+		respondEphemeral(s, i, "✅ Time format set to 12-hour (e.g., 2:00 PM)")
+	}
 }
 
 // checkSetupComplete checks if all required settings are configured
@@ -681,4 +760,18 @@ func formatBool(b bool) string {
 		return "✅ Enabled"
 	}
 	return "❌ Disabled"
+}
+
+func formatDateFormatSetting(european bool) string {
+	if european {
+		return "DD/MM/YYYY (European)"
+	}
+	return "MM/DD/YYYY (American)"
+}
+
+func formatTimeFormatSetting(use24h bool) string {
+	if use24h {
+		return "24-hour (14:00)"
+	}
+	return "12-hour (2:00 PM)"
 }

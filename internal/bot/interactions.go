@@ -204,7 +204,7 @@ func (b *Bot) handleMsgWithoutYearModal(s *discordgo.Session, i *discordgo.Inter
 func (b *Bot) handleInteractiveModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
 	
-	var msgWithYear, msgWithoutYear, timeStr string
+	var msgWithYear, msgWithoutYear, timeStr, dateFormatStr, timeFormatStr string
 	for _, comp := range data.Components {
 		row := comp.(*discordgo.ActionsRow)
 		for _, c := range row.Components {
@@ -216,6 +216,10 @@ func (b *Bot) handleInteractiveModal(s *discordgo.Session, i *discordgo.Interact
 				msgWithoutYear = input.Value
 			case "time_hour":
 				timeStr = input.Value
+			case "date_format":
+				dateFormatStr = input.Value
+			case "time_format":
+				timeFormatStr = input.Value
 			}
 		}
 	}
@@ -226,6 +230,10 @@ func (b *Bot) handleInteractiveModal(s *discordgo.Session, i *discordgo.Interact
 		respondError(s, i, "Invalid hour. Please enter a number between 0 and 23.")
 		return
 	}
+
+	// Parse boolean values
+	europeanDate := strings.ToLower(strings.TrimSpace(dateFormatStr)) == "yes"
+	use24hTime := strings.ToLower(strings.TrimSpace(timeFormatStr)) == "yes"
 
 	ctx := context.Background()
 	
@@ -242,16 +250,35 @@ func (b *Bot) handleInteractiveModal(s *discordgo.Session, i *discordgo.Interact
 		respondError(s, i, "Failed to update settings")
 		return
 	}
+	if err := b.repo.UpdateGuildEuropeanDateFormat(ctx, i.GuildID, europeanDate); err != nil {
+		respondError(s, i, "Failed to update settings")
+		return
+	}
+	if err := b.repo.UpdateGuildUse24hTime(ctx, i.GuildID, use24hTime); err != nil {
+		respondError(s, i, "Failed to update settings")
+		return
+	}
 
 	b.checkSetupComplete(ctx, i.GuildID)
 
+	dateFormatDisplay := "MM/DD/YYYY"
+	if europeanDate {
+		dateFormatDisplay = "DD/MM/YYYY"
+	}
+	timeFormatDisplay := "12-hour"
+	if use24hTime {
+		timeFormatDisplay = "24-hour"
+	}
+
 	respondEphemeral(s, i, fmt.Sprintf(
 		"✅ Settings saved!\n\n"+
-			"**Announcement hour:** %02d:00\n\n"+
+			"**Announcement hour:** %02d:00\n"+
+			"**Date format:** %s\n"+
+			"**Time format:** %s\n\n"+
 			"Now set the channel and role:\n"+
 			"• `/bdset channel #channel`\n"+
 			"• `/bdset role @role`",
-		hour,
+		hour, dateFormatDisplay, timeFormatDisplay,
 	))
 }
 

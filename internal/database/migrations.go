@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     allow_role_mention BOOLEAN DEFAULT FALSE,
     required_role_id   VARCHAR(32),
     default_timezone   VARCHAR(64) DEFAULT 'UTC',
+    european_date_format BOOLEAN DEFAULT FALSE,
+    use_24h_time       BOOLEAN DEFAULT FALSE,
     setup_complete     BOOLEAN DEFAULT FALSE,
     created_at         TIMESTAMP DEFAULT NOW(),
     updated_at         TIMESTAMP DEFAULT NOW()

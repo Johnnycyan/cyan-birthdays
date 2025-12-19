@@ -15,6 +15,21 @@ var commands = []*discordgo.ApplicationCommand{
 				Name:        "set",
 				Description: "Set your birthday",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "birthday",
+						Description: "Your birthday (e.g., 9/24 or September 24, 2002)",
+						Type:        discordgo.ApplicationCommandOptionString,
+						Required:    true,
+					},
+					{
+						Name:         "timezone",
+						Description:  "Your timezone",
+						Type:         discordgo.ApplicationCommandOptionString,
+						Required:     false,
+						Autocomplete: true,
+					},
+				},
 			},
 			{
 				Name:        "remove",
@@ -91,11 +106,27 @@ var commands = []*discordgo.ApplicationCommand{
 				Name:        "msgwithyear",
 				Description: "Set the birthday message (with age)",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "message",
+						Description: "Message with placeholders: {mention}, {name}, {new_age}",
+						Type:        discordgo.ApplicationCommandOptionString,
+						Required:    true,
+					},
+				},
 			},
 			{
 				Name:        "msgwithoutyear",
 				Description: "Set the birthday message (without age)",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "message",
+						Description: "Message with placeholders: {mention}, {name}",
+						Type:        discordgo.ApplicationCommandOptionString,
+						Required:    true,
+					},
+				},
 			},
 			{
 				Name:        "rolemention",
@@ -164,6 +195,32 @@ var commands = []*discordgo.ApplicationCommand{
 				Name:        "interactive",
 				Description: "Start interactive setup wizard",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
+			},
+			{
+				Name:        "dateformat",
+				Description: "Toggle European date format (DD/MM instead of MM/DD)",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "european",
+						Description: "Use DD/MM/YYYY format?",
+						Type:        discordgo.ApplicationCommandOptionBoolean,
+						Required:    true,
+					},
+				},
+			},
+			{
+				Name:        "timeformat",
+				Description: "Toggle 24-hour time display",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "use24h",
+						Description: "Use 24-hour time format?",
+						Type:        discordgo.ApplicationCommandOptionBoolean,
+						Required:    true,
+					},
+				},
 			},
 		},
 	},
