@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -259,6 +260,8 @@ func (r *Repository) GetAllSetupGuilds(ctx context.Context) ([]GuildSettings, er
 
 // SetMemberBirthday creates or updates a member's birthday
 func (r *Repository) SetMemberBirthday(ctx context.Context, mb *MemberBirthday) error {
+	slog.Debug("SetMemberBirthday called", "guildID", mb.GuildID, "userID", mb.UserID, "month", mb.Month, "day", mb.Day, "year", mb.Year, "timezone", mb.Timezone)
+	
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO member_birthdays (guild_id, user_id, month, day, year, timezone, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -269,6 +272,12 @@ func (r *Repository) SetMemberBirthday(ctx context.Context, mb *MemberBirthday) 
 		    timezone = EXCLUDED.timezone,
 		    updated_at = NOW()
 	`, mb.GuildID, mb.UserID, mb.Month, mb.Day, mb.Year, mb.Timezone)
+	
+	if err != nil {
+		slog.Error("SetMemberBirthday failed", "error", err)
+	} else {
+		slog.Debug("SetMemberBirthday succeeded", "guildID", mb.GuildID, "userID", mb.UserID)
+	}
 	return err
 }
 
@@ -352,12 +361,15 @@ func (r *Repository) GetUpcomingBirthdays(ctx context.Context, guildID string, d
 
 // GetAllGuildBirthdays retrieves all birthdays for a guild
 func (r *Repository) GetAllGuildBirthdays(ctx context.Context, guildID string) ([]MemberBirthday, error) {
+	slog.Debug("GetAllGuildBirthdays called", "guildID", guildID)
+	
 	rows, err := r.pool.Query(ctx, `
 		SELECT guild_id, user_id, month, day, year, timezone, created_at, updated_at
 		FROM member_birthdays WHERE guild_id = $1
 		ORDER BY month, day
 	`, guildID)
 	if err != nil {
+		slog.Error("GetAllGuildBirthdays query failed", "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -369,9 +381,12 @@ func (r *Repository) GetAllGuildBirthdays(ctx context.Context, guildID string) (
 			&mb.GuildID, &mb.UserID, &mb.Month, &mb.Day, &mb.Year,
 			&mb.Timezone, &mb.CreatedAt, &mb.UpdatedAt,
 		); err != nil {
+			slog.Error("GetAllGuildBirthdays scan failed", "error", err)
 			return nil, err
 		}
 		birthdays = append(birthdays, mb)
 	}
+	
+	slog.Debug("GetAllGuildBirthdays completed", "guildID", guildID, "count", len(birthdays))
 	return birthdays, nil
 }

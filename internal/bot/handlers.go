@@ -49,6 +49,8 @@ func (b *Bot) handleBirthdayCommand(s *discordgo.Session, i *discordgo.Interacti
 func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	opts := i.ApplicationCommandData().Options[0].Options
 	
+	slog.Debug("Birthday set called", "guild", i.GuildID, "user", i.Member.User.ID, "opts_count", len(opts))
+	
 	var dateStr, tzStr string
 	for _, opt := range opts {
 		switch opt.Name {
@@ -58,6 +60,8 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 			tzStr = opt.StringValue()
 		}
 	}
+
+	slog.Debug("Parsed options", "dateStr", dateStr, "tzStr", tzStr)
 
 	// Get default timezone if not provided
 	if tzStr == "" {
@@ -73,9 +77,12 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 	// Parse the date
 	month, day, year, err := parseDate(dateStr)
 	if err != nil {
+		slog.Debug("Failed to parse date", "dateStr", dateStr, "error", err)
 		respondError(s, i, "Invalid date format. Use formats like: 9/24, September 24, or 9/24/2002")
 		return
 	}
+
+	slog.Debug("Parsed date", "month", month, "day", day, "year", year)
 
 	// Validate timezone
 	if !timezone.ValidateTimezone(tzStr) {
@@ -94,11 +101,15 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 		Timezone: tzStr,
 	}
 	
+	slog.Debug("Saving birthday", "guildID", mb.GuildID, "userID", mb.UserID, "month", mb.Month, "day", mb.Day)
+	
 	if err := b.repo.SetMemberBirthday(ctx, mb); err != nil {
 		slog.Error("Failed to save birthday", "error", err)
 		respondError(s, i, "Failed to save your birthday")
 		return
 	}
+
+	slog.Info("Birthday saved successfully", "guildID", mb.GuildID, "userID", mb.UserID)
 
 	// Format confirmation
 	dateDisplay := time.Month(month).String() + " " + strconv.Itoa(day)
