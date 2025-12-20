@@ -56,6 +56,9 @@ func (b *Bot) processBirthdays() {
 	
 	slog.Info("Processing birthdays", "current_time_utc", now.UTC().Format("2006-01-02 15:04:05"))
 
+	// First, cleanup any expired birthday roles across all guilds
+	b.cleanupExpiredBirthdayRoles(ctx)
+
 	// Get all guilds with setup complete
 	guilds, err := b.repo.GetAllSetupGuilds(ctx)
 	if err != nil {
@@ -103,9 +106,6 @@ func (b *Bot) processGuildBirthdays(ctx context.Context, gs database.GuildSettin
 	for _, bd := range birthdays {
 		b.processMemberBirthday(ctx, gs, bd, guild)
 	}
-
-	// Remove birthday role from members who no longer have their birthday
-	b.cleanupBirthdayRoles(ctx, gs, birthdays, guild)
 }
 
 // processMemberBirthday checks if a member should be announced
@@ -181,15 +181,31 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 	// Add birthday role
 	if err := b.session.GuildMemberRoleAdd(gs.GuildID, bd.UserID, *gs.RoleID); err != nil {
 		slog.Error("Failed to add birthday role", "guild_id", gs.GuildID, "user_id", bd.UserID, "error", err)
-	} else {
-		slog.Info("Added birthday role", "guild_id", gs.GuildID, "user_id", bd.UserID)
+		return
+	}
+	slog.Info("Added birthday role", "guild_id", gs.GuildID, "user_id", bd.UserID)
+
+	// Calculate expiration time: announcement hour + 24h in user's timezone
+	loc, err := time.LoadLocation(bd.Timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	// Get today's announcement time in user's timezone
+	announcementTime := time.Date(now.Year(), now.Month(), now.Day(), gs.TimeUTC, 0, 0, 0, loc)
+	// If we're past the announcement hour (bot started late), the base is still today's announcement time
+	// Add 24 hours for expiration
+	expiresAt := announcementTime.Add(24 * time.Hour).UTC()
+	
+	slog.Debug("Setting birthday role expiration", "user_id", bd.UserID, "expires_at", expiresAt)
+	if err := b.repo.SetActiveBirthdayRole(ctx, gs.GuildID, bd.UserID, expiresAt); err != nil {
+		slog.Error("Failed to record birthday role expiration", "error", err)
 	}
 
 	// Send announcement
 	var message string
 	if bd.Year != nil && *bd.Year > 0 {
 		// Calculate age
-		now := time.Now()
 		age := now.Year() - *bd.Year
 		message = formatMessage(gs.MessageWithYear, member.User.Username, bd.UserID, &age)
 	} else {
@@ -214,50 +230,48 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 	}
 }
 
-// cleanupBirthdayRoles removes birthday role from members whose birthday has ended
-func (b *Bot) cleanupBirthdayRoles(ctx context.Context, gs database.GuildSettings, birthdays []database.MemberBirthday, guild *discordgo.Guild) {
-	if gs.RoleID == nil {
-		return
-	}
-
-	// Build set of users who should have the role today
-	birthdayUsers := make(map[string]bool)
-	for _, bd := range birthdays {
-		isBirthday, _ := timezone.IsBirthdayToday(bd.Month, bd.Day, bd.Timezone)
-		if isBirthday {
-			birthdayUsers[bd.UserID] = true
-		}
-	}
-
-	// Check all members with the birthday role
-	role, err := b.session.State.Role(gs.GuildID, *gs.RoleID)
+// cleanupExpiredBirthdayRoles removes birthday roles that have exceeded their 24h period
+func (b *Bot) cleanupExpiredBirthdayRoles(ctx context.Context) {
+	slog.Debug("Checking for expired birthday roles")
+	
+	expiredRoles, err := b.repo.GetExpiredBirthdayRoles(ctx)
 	if err != nil {
+		slog.Error("Failed to get expired birthday roles", "error", err)
 		return
 	}
 
-	// Get guild members (this may need pagination for large guilds)
-	members, err := b.session.GuildMembers(gs.GuildID, "", 1000)
-	if err != nil {
-		slog.Warn("Failed to get guild members for cleanup", "guild_id", gs.GuildID, "error", err)
+	if len(expiredRoles) == 0 {
+		slog.Debug("No expired birthday roles found")
 		return
 	}
 
-	for _, member := range members {
-		hasRole := false
-		for _, roleID := range member.Roles {
-			if roleID == role.ID {
-				hasRole = true
-				break
-			}
+	slog.Info("Found expired birthday roles to remove", "count", len(expiredRoles))
+
+	for _, ar := range expiredRoles {
+		// Get guild settings to find the role ID
+		gs, err := b.repo.GetGuildSettings(ctx, ar.GuildID)
+		if err != nil {
+			slog.Warn("Failed to get guild settings for cleanup", "guild_id", ar.GuildID, "error", err)
+			// Still delete the record
+			b.repo.DeleteActiveBirthdayRole(ctx, ar.GuildID, ar.UserID)
+			continue
 		}
 
-		if hasRole && !birthdayUsers[member.User.ID] {
-			// Remove role - birthday is over
-			if err := b.session.GuildMemberRoleRemove(gs.GuildID, member.User.ID, *gs.RoleID); err != nil {
-				slog.Warn("Failed to remove birthday role", "guild_id", gs.GuildID, "user_id", member.User.ID, "error", err)
-			} else {
-				slog.Info("Removed birthday role", "guild_id", gs.GuildID, "user_id", member.User.ID)
-			}
+		if gs.RoleID == nil {
+			b.repo.DeleteActiveBirthdayRole(ctx, ar.GuildID, ar.UserID)
+			continue
+		}
+
+		// Remove the role from the member
+		if err := b.session.GuildMemberRoleRemove(ar.GuildID, ar.UserID, *gs.RoleID); err != nil {
+			slog.Warn("Failed to remove expired birthday role", "guild_id", ar.GuildID, "user_id", ar.UserID, "error", err)
+		} else {
+			slog.Info("Removed expired birthday role", "guild_id", ar.GuildID, "user_id", ar.UserID, "expired_at", ar.RoleExpiresAt)
+		}
+
+		// Delete the record regardless of role removal success
+		if err := b.repo.DeleteActiveBirthdayRole(ctx, ar.GuildID, ar.UserID); err != nil {
+			slog.Error("Failed to delete active birthday role record", "error", err)
 		}
 	}
 }

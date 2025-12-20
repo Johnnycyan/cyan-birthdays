@@ -38,6 +38,14 @@ type MemberBirthday struct {
 	UpdatedAt time.Time
 }
 
+// ActiveBirthdayRole tracks when a user's birthday role should expire
+type ActiveBirthdayRole struct {
+	GuildID        string
+	UserID         string
+	RoleAssignedAt time.Time
+	RoleExpiresAt  time.Time
+}
+
 // Repository handles database operations
 type Repository struct {
 	pool *pgxpool.Pool
@@ -389,4 +397,70 @@ func (r *Repository) GetAllGuildBirthdays(ctx context.Context, guildID string) (
 	
 	slog.Debug("GetAllGuildBirthdays completed", "guildID", guildID, "count", len(birthdays))
 	return birthdays, nil
+}
+
+// SetActiveBirthdayRole records that a user has been given the birthday role
+func (r *Repository) SetActiveBirthdayRole(ctx context.Context, guildID, userID string, expiresAt time.Time) error {
+	slog.Debug("SetActiveBirthdayRole", "guildID", guildID, "userID", userID, "expiresAt", expiresAt)
+	
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO active_birthday_roles (guild_id, user_id, role_expires_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (guild_id, user_id) DO UPDATE SET
+		    role_expires_at = EXCLUDED.role_expires_at,
+		    role_assigned_at = NOW()
+	`, guildID, userID, expiresAt)
+	
+	if err != nil {
+		slog.Error("SetActiveBirthdayRole failed", "error", err)
+	}
+	return err
+}
+
+// GetExpiredBirthdayRoles returns all roles that should be removed
+func (r *Repository) GetExpiredBirthdayRoles(ctx context.Context) ([]ActiveBirthdayRole, error) {
+	slog.Debug("GetExpiredBirthdayRoles called")
+	
+	rows, err := r.pool.Query(ctx, `
+		SELECT guild_id, user_id, role_assigned_at, role_expires_at
+		FROM active_birthday_roles
+		WHERE role_expires_at <= NOW()
+	`)
+	if err != nil {
+		slog.Error("GetExpiredBirthdayRoles query failed", "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var roles []ActiveBirthdayRole
+	for rows.Next() {
+		var r ActiveBirthdayRole
+		if err := rows.Scan(&r.GuildID, &r.UserID, &r.RoleAssignedAt, &r.RoleExpiresAt); err != nil {
+			slog.Error("GetExpiredBirthdayRoles scan failed", "error", err)
+			return nil, err
+		}
+		roles = append(roles, r)
+	}
+	
+	slog.Debug("GetExpiredBirthdayRoles completed", "count", len(roles))
+	return roles, nil
+}
+
+// DeleteActiveBirthdayRole removes the active role entry
+func (r *Repository) DeleteActiveBirthdayRole(ctx context.Context, guildID, userID string) error {
+	slog.Debug("DeleteActiveBirthdayRole", "guildID", guildID, "userID", userID)
+	
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM active_birthday_roles WHERE guild_id = $1 AND user_id = $2
+	`, guildID, userID)
+	return err
+}
+
+// HasActiveBirthdayRole checks if a user currently has an active birthday role entry
+func (r *Repository) HasActiveBirthdayRole(ctx context.Context, guildID, userID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM active_birthday_roles WHERE guild_id = $1 AND user_id = $2)
+	`, guildID, userID).Scan(&exists)
+	return exists, err
 }

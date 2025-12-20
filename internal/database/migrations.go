@@ -36,7 +36,16 @@ CREATE TABLE IF NOT EXISTS member_birthdays (
     PRIMARY KEY (guild_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS active_birthday_roles (
+    guild_id         VARCHAR(32) NOT NULL,
+    user_id          VARCHAR(32) NOT NULL,
+    role_assigned_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    role_expires_at  TIMESTAMP NOT NULL,
+    PRIMARY KEY (guild_id, user_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_birthdays_date ON member_birthdays(month, day);
+CREATE INDEX IF NOT EXISTS idx_active_roles_expiry ON active_birthday_roles(role_expires_at);
 `
 
 // migrations to add new columns to existing tables
