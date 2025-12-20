@@ -222,6 +222,19 @@ var commands = []*discordgo.ApplicationCommand{
 					},
 				},
 			},
+			{
+				Name:        "import",
+				Description: "Import birthdays from RedBot Birthday cog JSON file (bot owner only)",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "file",
+						Description: "The JSON file from the RedBot cog",
+						Type:        discordgo.ApplicationCommandOptionAttachment,
+						Required:    true,
+					},
+				},
+			},
 		},
 	},
 }

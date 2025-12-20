@@ -2,9 +2,12 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -251,10 +254,13 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 	dateMap := make(map[string][]string)
 	for _, bd := range upcoming {
 		dateKey := fmt.Sprintf("%s %d", time.Month(bd.Month).String(), bd.Day)
-		if bd.DaysAway == 0 {
+		switch bd.DaysAway {
+		case 0:
 			dateKey = "Today!"
-		} else if bd.DaysAway == 1 {
+		case 1:
 			dateKey = "Tomorrow"
+		default:
+			dateKey = fmt.Sprintf("In %d days", bd.DaysAway)
 		}
 		
 		// Calculate announcement time in user's timezone, then convert to Unix timestamp
@@ -339,6 +345,8 @@ func (b *Bot) handleBdsetCommand(s *discordgo.Session, i *discordgo.InteractionC
 		b.handleBdsetDateFormat(s, i)
 	case "timeformat":
 		b.handleBdsetTimeFormat(s, i)
+	case "import":
+		b.handleBdsetImport(s, i)
 	}
 }
 
@@ -753,6 +761,181 @@ func (b *Bot) handleBdsetTimeFormat(s *discordgo.Session, i *discordgo.Interacti
 	} else {
 		respondEphemeral(s, i, "✅ Time format set to 12-hour (e.g., 2:00 PM)")
 	}
+}
+
+// handleBdsetImport imports birthday data from RedBot Birthday cog JSON
+func (b *Bot) handleBdsetImport(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Check if user is the bot owner (application owner)
+	app, err := s.Application("@me")
+	if err != nil {
+		slog.Error("Failed to get application info", "error", err)
+		respondError(s, i, "Failed to verify permissions")
+		return
+	}
+	
+	if i.Member.User.ID != app.Owner.ID {
+		respondError(s, i, "This command is only available to the bot owner")
+		return
+	}
+
+	opts := i.ApplicationCommandData().Options[0].Options
+	
+	// Get attachment ID from option
+	attachmentID := opts[0].Value.(string)
+	
+	// Get attachment from resolved data
+	attachment, ok := i.ApplicationCommandData().Resolved.Attachments[attachmentID]
+	if !ok {
+		respondError(s, i, "Could not find the attached file")
+		return
+	}
+
+	// Verify it's a JSON file
+	if attachment.ContentType != "application/json" && !strings.HasSuffix(attachment.Filename, ".json") {
+		respondError(s, i, "Please attach a JSON file")
+		return
+	}
+
+	slog.Info("Starting birthday import", "guild_id", i.GuildID, "filename", attachment.Filename, "size", attachment.Size)
+
+	// Download the file
+	resp, err := http.Get(attachment.URL)
+	if err != nil {
+		slog.Error("Failed to download file", "error", err)
+		respondError(s, i, "Failed to download file: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	jsonData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		slog.Error("Failed to read file", "error", err)
+		respondError(s, i, "Failed to read file: "+err.Error())
+		return
+	}
+
+	// Parse the JSON - RedBot cog format
+	var cogData map[string]json.RawMessage
+	if err := json.Unmarshal(jsonData, &cogData); err != nil {
+		slog.Error("Failed to parse JSON", "error", err)
+		respondError(s, i, "Failed to parse JSON: "+err.Error())
+		return
+	}
+
+	// The top level has a cog ID, we need to find the data inside it
+	var rootData struct {
+		Global json.RawMessage `json:"GLOBAL"`
+		Guild  map[string]struct {
+			TimeUTC          int    `json:"time_utc_s"`
+			MessageWithYear  string `json:"message_w_year"`
+			MessageWithoutYear string `json:"message_wo_year"`
+			ChannelID        int64  `json:"channel_id"`
+			RoleID           int64  `json:"role_id"`
+			SetupState       int    `json:"setup_state"`
+			RequireRole      int64  `json:"require_role"`
+			AllowRoleMention bool   `json:"allow_role_mention"`
+		} `json:"GUILD"`
+		Member map[string]map[string]struct {
+			Birthday struct {
+				Year  *int `json:"year"`
+				Month int  `json:"month"`
+				Day   int  `json:"day"`
+			} `json:"birthday"`
+		} `json:"MEMBER"`
+	}
+
+	// Try to find the cog data inside
+	var parsedRoot bool
+	for _, v := range cogData {
+		if err := json.Unmarshal(v, &rootData); err == nil && (rootData.Guild != nil || rootData.Member != nil) {
+			parsedRoot = true
+			break
+		}
+	}
+
+	if !parsedRoot {
+		respondError(s, i, "Could not find valid birthday cog data in JSON")
+		return
+	}
+
+	ctx := context.Background()
+	
+	// Get guild's default timezone (or use UTC)
+	defaultTZ := "UTC"
+	gs, err := b.repo.GetGuildSettings(ctx, i.GuildID)
+	if err == nil && gs != nil && gs.DefaultTimezone != "" {
+		defaultTZ = gs.DefaultTimezone
+	}
+
+	var importedCount int
+	var errorCount int
+
+	// Import member birthdays for this guild
+	if rootData.Member != nil {
+		for guildID, members := range rootData.Member {
+			// Only import for the current guild
+			if guildID != i.GuildID {
+				continue
+			}
+
+			for userID, data := range members {
+				var year *int
+				if data.Birthday.Year != nil && *data.Birthday.Year > 0 {
+					year = data.Birthday.Year
+				}
+
+				mb := &database.MemberBirthday{
+					GuildID:  i.GuildID,
+					UserID:   userID,
+					Month:    data.Birthday.Month,
+					Day:      data.Birthday.Day,
+					Year:     year,
+					Timezone: defaultTZ, // Use server's default timezone
+				}
+
+				if err := b.repo.SetMemberBirthday(ctx, mb); err != nil {
+					slog.Warn("Failed to import birthday", "user_id", userID, "error", err)
+					errorCount++
+				} else {
+					importedCount++
+					slog.Debug("Imported birthday", "user_id", userID, "month", data.Birthday.Month, "day", data.Birthday.Day)
+				}
+			}
+		}
+	}
+
+	// Import guild settings if they exist for this guild
+	if rootData.Guild != nil {
+		if guildConfig, exists := rootData.Guild[i.GuildID]; exists {
+			channelID := strconv.FormatInt(guildConfig.ChannelID, 10)
+			roleID := strconv.FormatInt(guildConfig.RoleID, 10)
+			
+			importedGS := &database.GuildSettings{
+				GuildID:            i.GuildID,
+				ChannelID:          &channelID,
+				RoleID:             &roleID,
+				TimeUTC:            guildConfig.TimeUTC,
+				MessageWithYear:    guildConfig.MessageWithYear,
+				MessageWithoutYear: guildConfig.MessageWithoutYear,
+				AllowRoleMention:   guildConfig.AllowRoleMention,
+				DefaultTimezone:    defaultTZ,
+				SetupComplete:      guildConfig.SetupState >= 5,
+			}
+			
+			if guildConfig.RequireRole > 0 {
+				reqRole := strconv.FormatInt(guildConfig.RequireRole, 10)
+				importedGS.RequiredRoleID = &reqRole
+			}
+
+			if err := b.repo.UpsertGuildSettings(ctx, importedGS); err != nil {
+				slog.Error("Failed to import guild settings", "error", err)
+			} else {
+				slog.Info("Imported guild settings", "guild_id", i.GuildID)
+			}
+		}
+	}
+
+	respondEphemeral(s, i, fmt.Sprintf("✅ Import complete!\n\n**Birthdays imported:** %d\n**Errors:** %d\n**Timezone used:** %s", importedCount, errorCount, defaultTZ))
 }
 
 // checkSetupComplete checks if all required settings are configured

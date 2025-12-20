@@ -93,23 +93,13 @@ func (b *Bot) processGuildBirthdays(ctx context.Context, gs database.GuildSettin
 
 	slog.Debug("Found birthdays in guild", "guild_id", gs.GuildID, "count", len(birthdays))
 
-	guild, err := b.session.State.Guild(gs.GuildID)
-	if err != nil {
-		// Try to fetch if not in state
-		guild, err = b.session.Guild(gs.GuildID)
-		if err != nil {
-			slog.Debug("Guild not accessible", "guild_id", gs.GuildID)
-			return
-		}
-	}
-
 	for _, bd := range birthdays {
-		b.processMemberBirthday(ctx, gs, bd, guild)
+		b.processMemberBirthday(ctx, gs, bd)
 	}
 }
 
 // processMemberBirthday checks if a member should be announced
-func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettings, bd database.MemberBirthday, guild *discordgo.Guild) {
+func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettings, bd database.MemberBirthday) {
 	slog.Debug("Checking member birthday", "guild_id", gs.GuildID, "user_id", bd.UserID, "month", bd.Month, "day", bd.Day, "timezone", bd.Timezone)
 	
 	// Check if it's their birthday in their timezone
