@@ -217,6 +217,27 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 		slog.Debug("Checking birthday", "userID", bd.UserID, "month", bd.Month, "day", bd.Day, "thisYearBday", thisYearBday.Format("2006-01-02"), "daysAway", daysAway)
 		
 		if daysAway <= days {
+			// Check if required role is set and user has it
+			if gs.RequiredRoleID != nil {
+				member, err := s.GuildMember(i.GuildID, bd.UserID)
+				if err != nil {
+					slog.Debug("Could not fetch member for role check", "userID", bd.UserID, "error", err)
+					continue // Skip user if we can't check their roles
+				}
+				
+				hasRole := false
+				for _, roleID := range member.Roles {
+					if roleID == *gs.RequiredRoleID {
+						hasRole = true
+						break
+					}
+				}
+				if !hasRole {
+					slog.Debug("User missing required role, skipping from upcoming", "userID", bd.UserID)
+					continue
+				}
+			}
+			
 			upcoming = append(upcoming, upcomingBday{
 				UserID:   bd.UserID,
 				Month:    bd.Month,
