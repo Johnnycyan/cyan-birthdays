@@ -174,6 +174,15 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 		return
 	}
 
+	// Get guild settings for announcement hour
+	gs, err := b.repo.GetGuildSettings(ctx, i.GuildID)
+	var announcementHour int
+	if err != nil || gs == nil {
+		announcementHour = 0 // Default to midnight
+	} else {
+		announcementHour = gs.TimeUTC
+	}
+
 	// Filter to upcoming birthdays
 	now := time.Now().UTC()
 	// Truncate to start of day for accurate date comparison
@@ -186,6 +195,7 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 		Month    int
 		Day      int
 		Year     *int
+		Timezone string
 		DaysAway int
 	}
 
@@ -209,6 +219,7 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 				Month:    bd.Month,
 				Day:      bd.Day,
 				Year:     bd.Year,
+				Timezone: bd.Timezone,
 				DaysAway: daysAway,
 			})
 		}
@@ -246,13 +257,28 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 			dateKey = "Tomorrow"
 		}
 		
-		mention := fmt.Sprintf("<@%s>", bd.UserID)
+		// Calculate announcement time in user's timezone, then convert to Unix timestamp
+		loc, err := time.LoadLocation(bd.Timezone)
+		if err != nil {
+			loc = time.UTC
+		}
+		
+		// Get the birthday date in user's timezone with announcement hour
+		bdayDate := time.Date(now.Year(), time.Month(bd.Month), bd.Day, announcementHour, 0, 0, 0, loc)
+		if bdayDate.Before(now) && bd.DaysAway > 0 {
+			bdayDate = bdayDate.AddDate(1, 0, 0)
+		}
+		
+		// Format as Discord timestamp (shows time only in viewer's local time)
+		timestamp := fmt.Sprintf("<t:%d:t>", bdayDate.Unix())
+		
+		mention := fmt.Sprintf("<@%s> - %s", bd.UserID, timestamp)
 		if bd.Year != nil && *bd.Year > 0 {
 			age := now.Year() - *bd.Year
 			if bd.DaysAway > 0 {
-				mention += fmt.Sprintf(" (turning %d)", age)
+				mention = fmt.Sprintf("<@%s> (turning %d) - %s", bd.UserID, age, timestamp)
 			} else {
-				mention += fmt.Sprintf(" (now %d)", age)
+				mention = fmt.Sprintf("<@%s> (now %d) - %s", bd.UserID, age, timestamp)
 			}
 		}
 		dateMap[dateKey] = append(dateMap[dateKey], mention)
@@ -262,7 +288,7 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 			Name:   date,
 			Value:  strings.Join(users, "\n"),
-			Inline: true,
+			Inline: false,
 		})
 	}
 
