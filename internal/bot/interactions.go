@@ -404,9 +404,28 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 // parseDate parses various date formats
 func parseDate(input string) (month, day int, year *int, err error) {
 	input = strings.TrimSpace(input)
-	
-	// Try MM/DD/YYYY or MM-DD-YYYY format
-	for _, sep := range []string{"/", "-"} {
+
+	// Try ISO format YYYY-MM-DD first (e.g., 2000-12-07)
+	if len(input) >= 8 {
+		for _, sep := range []string{"-", "/", "."} {
+			parts := strings.Split(input, sep)
+			if len(parts) == 3 {
+				// Check if first part looks like a year (4 digits, starts with 19 or 20)
+				if len(parts[0]) == 4 {
+					y, err1 := strconv.Atoi(parts[0])
+					m, err2 := strconv.Atoi(parts[1])
+					d, err3 := strconv.Atoi(parts[2])
+					if err1 == nil && err2 == nil && err3 == nil &&
+						y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31 {
+						return m, d, &y, nil
+					}
+				}
+			}
+		}
+	}
+
+	// Try MM/DD/YYYY or MM-DD-YYYY or MM.DD.YYYY format
+	for _, sep := range []string{"/", "-", "."} {
 		parts := strings.Split(input, sep)
 		if len(parts) >= 2 {
 			m, err1 := strconv.Atoi(parts[0])
@@ -434,21 +453,56 @@ func parseDate(input string) (month, day int, year *int, err error) {
 		"october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
 	}
 
-	// Remove ordinal suffixes
-	input = strings.ReplaceAll(input, "st", "")
-	input = strings.ReplaceAll(input, "nd", "")
-	input = strings.ReplaceAll(input, "rd", "")
-	input = strings.ReplaceAll(input, "th", "")
-	input = strings.ReplaceAll(input, ",", " ")
+	// Remove ordinal suffixes only from numbers (e.g., "1st" -> "1", "23rd" -> "23")
+	// Using a simple approach: replace common patterns
+	cleaned := input
+	cleaned = strings.ReplaceAll(cleaned, ",", " ")
+	// Remove "of" for patterns like "7th of December"
+	cleaned = strings.ReplaceAll(strings.ToLower(cleaned), " of ", " ")
+	// Remove "the" for patterns like "the 7th of December"
+	if strings.HasPrefix(strings.ToLower(cleaned), "the ") {
+		cleaned = cleaned[4:]
+	}
 
-	words := strings.Fields(strings.ToLower(input))
+	words := strings.Fields(strings.ToLower(cleaned))
+	// Process words to remove ordinal suffixes from numbers only
+	for i, word := range words {
+		// Check if word is a number with ordinal suffix
+		if len(word) > 2 {
+			suffix := word[len(word)-2:]
+			if suffix == "st" || suffix == "nd" || suffix == "rd" || suffix == "th" {
+				numPart := word[:len(word)-2]
+				if _, err := strconv.Atoi(numPart); err == nil {
+					words[i] = numPart
+				}
+			}
+		}
+	}
+
 	for i, word := range words {
 		if m, ok := months[word]; ok {
+			// Try "Month Day [Year]" format (e.g., "December 7, 2000")
 			if i+1 < len(words) {
 				d, err := strconv.Atoi(words[i+1])
 				if err == nil && d >= 1 && d <= 31 {
 					if i+2 < len(words) {
 						y, err := strconv.Atoi(words[i+2])
+						if err == nil {
+							if y < 100 {
+								y += 2000
+							}
+							return m, d, &y, nil
+						}
+					}
+					return m, d, nil, nil
+				}
+			}
+			// Try "Day Month [Year]" format (e.g., "7 December 2000")
+			if i > 0 {
+				d, err := strconv.Atoi(words[i-1])
+				if err == nil && d >= 1 && d <= 31 {
+					if i+1 < len(words) {
+						y, err := strconv.Atoi(words[i+1])
 						if err == nil {
 							if y < 100 {
 								y += 2000
