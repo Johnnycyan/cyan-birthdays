@@ -46,6 +46,15 @@ type ActiveBirthdayRole struct {
 	RoleExpiresAt  time.Time
 }
 
+// BotAdmin represents a user or role that has admin permissions for the bot in a guild
+type BotAdmin struct {
+	GuildID    string
+	TargetID   string // user_id or role_id
+	TargetType string // "user" or "role"
+	AddedBy    string
+	AddedAt    time.Time
+}
+
 // Repository handles database operations
 type Repository struct {
 	pool *pgxpool.Pool
@@ -463,4 +472,71 @@ func (r *Repository) HasActiveBirthdayRole(ctx context.Context, guildID, userID 
 		SELECT EXISTS(SELECT 1 FROM active_birthday_roles WHERE guild_id = $1 AND user_id = $2)
 	`, guildID, userID).Scan(&exists)
 	return exists, err
+}
+
+// AddBotAdmin adds a user or role as a bot admin for a guild
+func (r *Repository) AddBotAdmin(ctx context.Context, guildID, targetID, targetType, addedBy string) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO bot_admins (guild_id, target_id, target_type, added_by)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (guild_id, target_id, target_type) DO NOTHING
+	`, guildID, targetID, targetType, addedBy)
+	return err
+}
+
+// RemoveBotAdmin removes a user or role from bot admins for a guild
+func (r *Repository) RemoveBotAdmin(ctx context.Context, guildID, targetID, targetType string) error {
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM bot_admins WHERE guild_id = $1 AND target_id = $2 AND target_type = $3
+	`, guildID, targetID, targetType)
+	return err
+}
+
+// GetBotAdmins retrieves all bot admins for a guild
+func (r *Repository) GetBotAdmins(ctx context.Context, guildID string) ([]BotAdmin, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT guild_id, target_id, target_type, added_by, added_at
+		FROM bot_admins WHERE guild_id = $1
+		ORDER BY target_type, added_at
+	`, guildID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var admins []BotAdmin
+	for rows.Next() {
+		var a BotAdmin
+		if err := rows.Scan(&a.GuildID, &a.TargetID, &a.TargetType, &a.AddedBy, &a.AddedAt); err != nil {
+			return nil, err
+		}
+		admins = append(admins, a)
+	}
+	return admins, nil
+}
+
+// IsBotAdmin checks if a user or any of their roles are bot admins for a guild
+func (r *Repository) IsBotAdmin(ctx context.Context, guildID, userID string, roleIDs []string) (bool, error) {
+	// Check if user is directly an admin
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM bot_admins WHERE guild_id = $1 AND target_id = $2 AND target_type = 'user')
+	`, guildID, userID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return true, nil
+	}
+
+	// Check if any of the user's roles are admins
+	if len(roleIDs) > 0 {
+		err = r.pool.QueryRow(ctx, `
+			SELECT EXISTS(SELECT 1 FROM bot_admins WHERE guild_id = $1 AND target_type = 'role' AND target_id = ANY($2))
+		`, guildID, roleIDs).Scan(&exists)
+		if err != nil {
+			return false, err
+		}
+	}
+	return exists, nil
 }

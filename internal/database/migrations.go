@@ -44,8 +44,18 @@ CREATE TABLE IF NOT EXISTS active_birthday_roles (
     PRIMARY KEY (guild_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS bot_admins (
+    guild_id    VARCHAR(32) NOT NULL,
+    target_id   VARCHAR(32) NOT NULL,
+    target_type VARCHAR(8) NOT NULL,
+    added_by    VARCHAR(32) NOT NULL,
+    added_at    TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (guild_id, target_id, target_type)
+);
+
 CREATE INDEX IF NOT EXISTS idx_birthdays_date ON member_birthdays(month, day);
 CREATE INDEX IF NOT EXISTS idx_active_roles_expiry ON active_birthday_roles(role_expires_at);
+CREATE INDEX IF NOT EXISTS idx_bot_admins_guild ON bot_admins(guild_id);
 `
 
 // migrations to add new columns to existing tables

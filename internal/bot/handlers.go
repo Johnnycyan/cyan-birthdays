@@ -335,6 +335,12 @@ func (b *Bot) handleBdsetCommand(s *discordgo.Session, i *discordgo.InteractionC
 		return
 	}
 
+	// Check if user has permission to use admin commands
+	if !b.HasBotAdminPermission(s, i) {
+		respondError(s, i, "You don't have permission to use this command. You need Manage Server permission or be a bot admin.")
+		return
+	}
+
 	subcommand := i.ApplicationCommandData().Options[0].Name
 
 	switch subcommand {
@@ -368,6 +374,8 @@ func (b *Bot) handleBdsetCommand(s *discordgo.Session, i *discordgo.InteractionC
 		b.handleBdsetTimeFormat(s, i)
 	case "import":
 		b.handleBdsetImport(s, i)
+	case "admin":
+		b.handleBdsetAdmin(s, i)
 	}
 }
 
@@ -1033,4 +1041,153 @@ func formatTimeFormatSetting(use24h bool) string {
 		return "24-hour (14:00)"
 	}
 	return "12-hour (2:00 PM)"
+}
+
+// handleBdsetAdmin handles /bdset admin subcommand group
+func (b *Bot) handleBdsetAdmin(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if len(i.ApplicationCommandData().Options[0].Options) == 0 {
+		return
+	}
+
+	subcommand := i.ApplicationCommandData().Options[0].Options[0].Name
+
+	switch subcommand {
+	case "add":
+		b.handleBdsetAdminAdd(s, i)
+	case "remove":
+		b.handleBdsetAdminRemove(s, i)
+	case "list":
+		b.handleBdsetAdminList(s, i)
+	}
+}
+
+// handleBdsetAdminAdd adds a user or role as a bot admin
+func (b *Bot) handleBdsetAdminAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	opts := i.ApplicationCommandData().Options[0].Options[0].Options
+
+	var userID, roleID string
+	for _, opt := range opts {
+		switch opt.Name {
+		case "user":
+			userID = opt.UserValue(s).ID
+		case "role":
+			roleID = opt.RoleValue(s, i.GuildID).ID
+		}
+	}
+
+	if userID == "" && roleID == "" {
+		respondError(s, i, "Please specify a user or role to add as admin")
+		return
+	}
+
+	ctx := context.Background()
+
+	if userID != "" {
+		if err := b.repo.AddBotAdmin(ctx, i.GuildID, userID, "user", i.Member.User.ID); err != nil {
+			respondError(s, i, "Failed to add user as admin")
+			return
+		}
+		respondEphemeral(s, i, fmt.Sprintf("✅ <@%s> has been added as a bot admin", userID))
+	}
+
+	if roleID != "" {
+		if err := b.repo.AddBotAdmin(ctx, i.GuildID, roleID, "role", i.Member.User.ID); err != nil {
+			respondError(s, i, "Failed to add role as admin")
+			return
+		}
+		respondEphemeral(s, i, fmt.Sprintf("✅ <@&%s> has been added as a bot admin role", roleID))
+	}
+}
+
+// handleBdsetAdminRemove removes a user or role from bot admins
+func (b *Bot) handleBdsetAdminRemove(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	opts := i.ApplicationCommandData().Options[0].Options[0].Options
+
+	var userID, roleID string
+	for _, opt := range opts {
+		switch opt.Name {
+		case "user":
+			userID = opt.UserValue(s).ID
+		case "role":
+			roleID = opt.RoleValue(s, i.GuildID).ID
+		}
+	}
+
+	if userID == "" && roleID == "" {
+		respondError(s, i, "Please specify a user or role to remove from admins")
+		return
+	}
+
+	ctx := context.Background()
+
+	if userID != "" {
+		if err := b.repo.RemoveBotAdmin(ctx, i.GuildID, userID, "user"); err != nil {
+			respondError(s, i, "Failed to remove user from admins")
+			return
+		}
+		respondEphemeral(s, i, fmt.Sprintf("✅ <@%s> has been removed from bot admins", userID))
+	}
+
+	if roleID != "" {
+		if err := b.repo.RemoveBotAdmin(ctx, i.GuildID, roleID, "role"); err != nil {
+			respondError(s, i, "Failed to remove role from admins")
+			return
+		}
+		respondEphemeral(s, i, fmt.Sprintf("✅ <@&%s> has been removed from bot admin roles", roleID))
+	}
+}
+
+// handleBdsetAdminList lists all bot admins for the guild
+func (b *Bot) handleBdsetAdminList(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	ctx := context.Background()
+	admins, err := b.repo.GetBotAdmins(ctx, i.GuildID)
+	if err != nil {
+		respondError(s, i, "Failed to fetch bot admins")
+		return
+	}
+
+	if len(admins) == 0 {
+		respondEphemeral(s, i, "No bot admins configured. Only users with Manage Server permission can use admin commands.")
+		return
+	}
+
+	var users, roles []string
+	for _, admin := range admins {
+		if admin.TargetType == "user" {
+			users = append(users, fmt.Sprintf("<@%s>", admin.TargetID))
+		} else {
+			roles = append(roles, fmt.Sprintf("<@&%s>", admin.TargetID))
+		}
+	}
+
+	embed := &discordgo.MessageEmbed{
+		Title: "🔐 Bot Admins",
+		Color: 0x00D9FF,
+	}
+
+	if len(users) > 0 {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Users",
+			Value: strings.Join(users, "\n"),
+		})
+	}
+
+	if len(roles) > 0 {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Roles",
+			Value: strings.Join(roles, "\n"),
+		})
+	}
+
+	embed.Footer = &discordgo.MessageEmbedFooter{
+		Text: "Users with Manage Server permission always have admin access",
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Embeds: []*discordgo.MessageEmbed{embed},
+			Flags:  discordgo.MessageFlagsEphemeral,
+		},
+	})
 }

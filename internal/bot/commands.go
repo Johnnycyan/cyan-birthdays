@@ -54,9 +54,8 @@ var commands = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
-		Name:                     "bdset",
-		Description:              "Birthday settings for admins",
-		DefaultMemberPermissions: int64Ptr(discordgo.PermissionManageServer),
+		Name:        "bdset",
+		Description: "Birthday settings for admins",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Name:        "channel",
@@ -232,6 +231,56 @@ var commands = []*discordgo.ApplicationCommand{
 						Description: "The JSON file from the RedBot cog",
 						Type:        discordgo.ApplicationCommandOptionAttachment,
 						Required:    true,
+					},
+				},
+			},
+			{
+				Name:        "admin",
+				Description: "Manage bot admins",
+				Type:        discordgo.ApplicationCommandOptionSubCommandGroup,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "add",
+						Description: "Add a user or role as bot admin",
+						Type:        discordgo.ApplicationCommandOptionSubCommand,
+						Options: []*discordgo.ApplicationCommandOption{
+							{
+								Name:        "user",
+								Description: "User to add as admin",
+								Type:        discordgo.ApplicationCommandOptionUser,
+								Required:    false,
+							},
+							{
+								Name:        "role",
+								Description: "Role to add as admin",
+								Type:        discordgo.ApplicationCommandOptionRole,
+								Required:    false,
+							},
+						},
+					},
+					{
+						Name:        "remove",
+						Description: "Remove a user or role from bot admins",
+						Type:        discordgo.ApplicationCommandOptionSubCommand,
+						Options: []*discordgo.ApplicationCommandOption{
+							{
+								Name:        "user",
+								Description: "User to remove from admins",
+								Type:        discordgo.ApplicationCommandOptionUser,
+								Required:    false,
+							},
+							{
+								Name:        "role",
+								Description: "Role to remove from admins",
+								Type:        discordgo.ApplicationCommandOptionRole,
+								Required:    false,
+							},
+						},
+					},
+					{
+						Name:        "list",
+						Description: "List all bot admins",
+						Type:        discordgo.ApplicationCommandOptionSubCommand,
 					},
 				},
 			},
