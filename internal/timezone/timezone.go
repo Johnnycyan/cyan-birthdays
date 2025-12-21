@@ -85,12 +85,17 @@ func GetTimezoneInfo(ianaName string) TimezoneInfo {
 }
 
 // FormatTimezoneChoice formats a timezone for the Discord autocomplete
-func FormatTimezoneChoice(tz TimezoneInfo) string {
+func FormatTimezoneChoice(tz TimezoneInfo, use24hTime bool) string {
 	currentTime, err := GetCurrentTime(tz.IANA)
 	if err != nil {
 		return tz.IANA + " (" + tz.Offset + ")"
 	}
-	timeStr := currentTime.Format("3:04 PM")
+	var timeStr string
+	if use24hTime {
+		timeStr = currentTime.Format("15:04")
+	} else {
+		timeStr = currentTime.Format("3:04 PM")
+	}
 	return tz.IANA + " (" + tz.Offset + ") - " + timeStr
 }
 

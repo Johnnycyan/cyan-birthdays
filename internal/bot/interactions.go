@@ -38,9 +38,13 @@ func (b *Bot) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionC
 		query := focused.StringValue()
 		results := timezone.SearchTimezones(query)
 
+		// Get format settings for the guild
+		ctx := context.Background()
+		formatSettings := b.GetFormatSettings(ctx, i.GuildID)
+
 		choices := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(results))
 		for _, tz := range results {
-			label := timezone.FormatTimezoneChoice(tz)
+			label := timezone.FormatTimezoneChoice(tz, formatSettings.Use24hTime)
 			// Discord has a 100 character limit for choice names
 			if len(label) > 100 {
 				label = label[:97] + "..."
