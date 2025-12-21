@@ -292,10 +292,6 @@ func floatPtr(f float64) *float64 {
 	return &f
 }
 
-func int64Ptr(i int64) *int64 {
-	return &i
-}
-
 // registerCommands registers all slash commands globally
 func (b *Bot) registerCommands() error {
 	slog.Info("Registering slash commands...")

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Johnnycyan/cyan-birthdays/internal/database"
 	"github.com/Johnnycyan/cyan-birthdays/internal/timezone"
@@ -97,10 +96,17 @@ func (b *Bot) handleBirthdaySetModal(s *discordgo.Session, i *discordgo.Interact
 		}
 	}
 
-	// Parse the date
-	month, day, year, err := parseDate(dateStr)
+	ctx := context.Background()
+	formatSettings := b.GetFormatSettings(ctx, i.GuildID)
+
+	// Parse the date with format settings
+	month, day, year, err := ParseDateWithSettings(dateStr, formatSettings)
 	if err != nil {
-		respondError(s, i, "Invalid date format. Use formats like: 9/24, September 24, or 9/24/2002")
+		formatHint := "MM/DD"
+		if formatSettings.EuropeanDateFormat {
+			formatHint = "DD/MM"
+		}
+		respondError(s, i, fmt.Sprintf("Invalid date format. Use formats like: %s, September 24, or %s/2002", formatHint, formatHint))
 		return
 	}
 
@@ -109,12 +115,11 @@ func (b *Bot) handleBirthdaySetModal(s *discordgo.Session, i *discordgo.Interact
 		tzStr = "UTC"
 	}
 	if !timezone.ValidateTimezone(tzStr) {
-		respondError(s, i, fmt.Sprintf("Invalid timezone: %s. Use IANA format like America/Detroit", tzStr))
+		respondError(s, i, fmt.Sprintf("Invalid timezone: %s. Use IANA format like America/New_York", tzStr))
 		return
 	}
 
 	// Save to database
-	ctx := context.Background()
 	mb := &database.MemberBirthday{
 		GuildID:  i.GuildID,
 		UserID:   i.Member.User.ID,
@@ -130,17 +135,14 @@ func (b *Bot) handleBirthdaySetModal(s *discordgo.Session, i *discordgo.Interact
 		return
 	}
 
-	// Format confirmation
-	dateDisplay := time.Month(month).String() + " " + strconv.Itoa(day)
-	if year != nil {
-		dateDisplay += ", " + strconv.Itoa(*year)
-	}
-
+	// Format confirmation using guild settings
+	dateDisplay := FormatDate(month, day, year, formatSettings)
 	currentTime, _ := timezone.GetCurrentTime(tzStr)
+	timeDisplay := FormatTime(currentTime, formatSettings)
 	
 	respondEphemeral(s, i, fmt.Sprintf(
 		"🎂 Your birthday has been set to **%s**!\nTimezone: %s (current time: %s)",
-		dateDisplay, tzStr, currentTime.Format("3:04 PM"),
+		dateDisplay, tzStr, timeDisplay,
 	))
 }
 
@@ -308,10 +310,17 @@ func (b *Bot) handleForceModal(s *discordgo.Session, i *discordgo.InteractionCre
 		}
 	}
 
-	// Parse the date
-	month, day, year, err := parseDate(dateStr)
+	ctx := context.Background()
+	formatSettings := b.GetFormatSettings(ctx, i.GuildID)
+
+	// Parse the date with format settings
+	month, day, year, err := ParseDateWithSettings(dateStr, formatSettings)
 	if err != nil {
-		respondError(s, i, "Invalid date format")
+		formatHint := "MM/DD"
+		if formatSettings.EuropeanDateFormat {
+			formatHint = "DD/MM"
+		}
+		respondError(s, i, fmt.Sprintf("Invalid date format. Use formats like: %s or %s/2002", formatHint, formatHint))
 		return
 	}
 
@@ -325,7 +334,6 @@ func (b *Bot) handleForceModal(s *discordgo.Session, i *discordgo.InteractionCre
 	}
 
 	// Save to database
-	ctx := context.Background()
 	mb := &database.MemberBirthday{
 		GuildID:  i.GuildID,
 		UserID:   targetUserID,
@@ -340,11 +348,7 @@ func (b *Bot) handleForceModal(s *discordgo.Session, i *discordgo.InteractionCre
 		return
 	}
 
-	dateDisplay := time.Month(month).String() + " " + strconv.Itoa(day)
-	if year != nil {
-		dateDisplay += ", " + strconv.Itoa(*year)
-	}
-
+	dateDisplay := FormatDate(month, day, year, formatSettings)
 	respondEphemeral(s, i, fmt.Sprintf("✅ Birthday for <@%s> set to **%s** (%s)", targetUserID, dateDisplay, tzStr))
 }
 
@@ -399,124 +403,6 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 			},
 		})
 	}
-}
-
-// parseDate parses various date formats
-func parseDate(input string) (month, day int, year *int, err error) {
-	input = strings.TrimSpace(input)
-
-	// Try ISO format YYYY-MM-DD first (e.g., 2000-12-07)
-	if len(input) >= 8 {
-		for _, sep := range []string{"-", "/", "."} {
-			parts := strings.Split(input, sep)
-			if len(parts) == 3 {
-				// Check if first part looks like a year (4 digits, starts with 19 or 20)
-				if len(parts[0]) == 4 {
-					y, err1 := strconv.Atoi(parts[0])
-					m, err2 := strconv.Atoi(parts[1])
-					d, err3 := strconv.Atoi(parts[2])
-					if err1 == nil && err2 == nil && err3 == nil &&
-						y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31 {
-						return m, d, &y, nil
-					}
-				}
-			}
-		}
-	}
-
-	// Try MM/DD/YYYY or MM-DD-YYYY or MM.DD.YYYY format
-	for _, sep := range []string{"/", "-", "."} {
-		parts := strings.Split(input, sep)
-		if len(parts) >= 2 {
-			m, err1 := strconv.Atoi(parts[0])
-			d, err2 := strconv.Atoi(parts[1])
-			if err1 == nil && err2 == nil && m >= 1 && m <= 12 && d >= 1 && d <= 31 {
-				if len(parts) == 3 {
-					y, err3 := strconv.Atoi(parts[2])
-					if err3 == nil {
-						if y < 100 {
-							y += 2000
-						}
-						return m, d, &y, nil
-					}
-				}
-				return m, d, nil, nil
-			}
-		}
-	}
-
-	// Try natural language format (e.g., "September 24" or "September 24, 2002")
-	months := map[string]int{
-		"january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
-		"april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6,
-		"july": 7, "jul": 7, "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
-		"october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
-	}
-
-	// Remove ordinal suffixes only from numbers (e.g., "1st" -> "1", "23rd" -> "23")
-	// Using a simple approach: replace common patterns
-	cleaned := input
-	cleaned = strings.ReplaceAll(cleaned, ",", " ")
-	// Remove "of" for patterns like "7th of December"
-	cleaned = strings.ReplaceAll(strings.ToLower(cleaned), " of ", " ")
-	// Remove "the" for patterns like "the 7th of December"
-	if strings.HasPrefix(strings.ToLower(cleaned), "the ") {
-		cleaned = cleaned[4:]
-	}
-
-	words := strings.Fields(strings.ToLower(cleaned))
-	// Process words to remove ordinal suffixes from numbers only
-	for i, word := range words {
-		// Check if word is a number with ordinal suffix
-		if len(word) > 2 {
-			suffix := word[len(word)-2:]
-			if suffix == "st" || suffix == "nd" || suffix == "rd" || suffix == "th" {
-				numPart := word[:len(word)-2]
-				if _, err := strconv.Atoi(numPart); err == nil {
-					words[i] = numPart
-				}
-			}
-		}
-	}
-
-	for i, word := range words {
-		if m, ok := months[word]; ok {
-			// Try "Month Day [Year]" format (e.g., "December 7, 2000")
-			if i+1 < len(words) {
-				d, err := strconv.Atoi(words[i+1])
-				if err == nil && d >= 1 && d <= 31 {
-					if i+2 < len(words) {
-						y, err := strconv.Atoi(words[i+2])
-						if err == nil {
-							if y < 100 {
-								y += 2000
-							}
-							return m, d, &y, nil
-						}
-					}
-					return m, d, nil, nil
-				}
-			}
-			// Try "Day Month [Year]" format (e.g., "7 December 2000")
-			if i > 0 {
-				d, err := strconv.Atoi(words[i-1])
-				if err == nil && d >= 1 && d <= 31 {
-					if i+1 < len(words) {
-						y, err := strconv.Atoi(words[i+1])
-						if err == nil {
-							if y < 100 {
-								y += 2000
-							}
-							return m, d, &y, nil
-						}
-					}
-					return m, d, nil, nil
-				}
-			}
-		}
-	}
-
-	return 0, 0, nil, fmt.Errorf("could not parse date: %s", input)
 }
 
 // formatMessage replaces placeholders in a birthday message

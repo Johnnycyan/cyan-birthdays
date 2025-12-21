@@ -66,9 +66,11 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 
 	slog.Debug("Parsed options", "dateStr", dateStr, "tzStr", tzStr)
 
+	ctx := context.Background()
+	formatSettings := b.GetFormatSettings(ctx, i.GuildID)
+
 	// Get default timezone if not provided
 	if tzStr == "" {
-		ctx := context.Background()
 		gs, err := b.repo.GetGuildSettings(ctx, i.GuildID)
 		if err == nil && gs != nil {
 			tzStr = gs.DefaultTimezone
@@ -77,11 +79,15 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 		}
 	}
 
-	// Parse the date
-	month, day, year, err := parseDate(dateStr)
+	// Parse the date with format settings
+	month, day, year, err := ParseDateWithSettings(dateStr, formatSettings)
 	if err != nil {
 		slog.Debug("Failed to parse date", "dateStr", dateStr, "error", err)
-		respondError(s, i, "Invalid date format. Use formats like: 9/24, September 24, or 9/24/2002")
+		formatHint := "MM/DD"
+		if formatSettings.EuropeanDateFormat {
+			formatHint = "DD/MM"
+		}
+		respondError(s, i, fmt.Sprintf("Invalid date format. Use formats like: %s, September 24, or %s/2002", formatHint, formatHint))
 		return
 	}
 
@@ -94,7 +100,6 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 	}
 
 	// Save to database
-	ctx := context.Background()
 	mb := &database.MemberBirthday{
 		GuildID:  i.GuildID,
 		UserID:   i.Member.User.ID,
@@ -114,17 +119,14 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 
 	slog.Info("Birthday saved successfully", "guildID", mb.GuildID, "userID", mb.UserID)
 
-	// Format confirmation
-	dateDisplay := time.Month(month).String() + " " + strconv.Itoa(day)
-	if year != nil {
-		dateDisplay += ", " + strconv.Itoa(*year)
-	}
-
+	// Format confirmation using guild settings
+	dateDisplay := FormatDate(month, day, year, formatSettings)
 	currentTime, _ := timezone.GetCurrentTime(tzStr)
+	timeDisplay := FormatTime(currentTime, formatSettings)
 	
 	respondEphemeral(s, i, fmt.Sprintf(
 		"🎂 Your birthday has been set to **%s**!\nTimezone: %s (current time: %s)",
-		dateDisplay, tzStr, currentTime.Format("3:04 PM"),
+		dateDisplay, tzStr, timeDisplay,
 	))
 }
 
@@ -518,8 +520,10 @@ func (b *Bot) handleBdsetDefaultTimezone(s *discordgo.Session, i *discordgo.Inte
 		return
 	}
 
+	formatSettings := b.GetFormatSettings(ctx, i.GuildID)
 	currentTime, _ := timezone.GetCurrentTime(tz)
-	respondEphemeral(s, i, fmt.Sprintf("✅ Default timezone set to %s (current time: %s)", tz, currentTime.Format("3:04 PM")))
+	timeDisplay := FormatTime(currentTime, formatSettings)
+	respondEphemeral(s, i, fmt.Sprintf("✅ Default timezone set to %s (current time: %s)", tz, timeDisplay))
 }
 
 // handleBdsetForce opens modal for force-setting a user's birthday
