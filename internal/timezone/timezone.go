@@ -13,68 +13,51 @@ type TimezoneInfo struct {
 	Offset       string // e.g., "UTC-5"
 }
 
-// CommonTimezones is a curated list of common timezones
+// CommonTimezones is a curated list covering all UTC offsets (no duplicates)
 var CommonTimezones = []TimezoneInfo{
-	// North America
-	{"EST", "America/Detroit", "UTC-5"},
-	{"CST", "America/Chicago", "UTC-6"},
-	{"MST", "America/Denver", "UTC-7"},
-	{"PST", "America/Los_Angeles", "UTC-8"},
-	{"AKST", "America/Anchorage", "UTC-9"},
+	// UTC-12 to UTC-1
+	{"AoE", "Etc/GMT+12", "UTC-12"},
+	{"SST", "Pacific/Pago_Pago", "UTC-11"},
 	{"HST", "Pacific/Honolulu", "UTC-10"},
+	{"HDT", "Pacific/Marquesas", "UTC-9:30"},
+	{"AKST", "America/Anchorage", "UTC-9"},
+	{"PST", "America/Los_Angeles", "UTC-8"},
+	{"MST", "America/Denver", "UTC-7"},
+	{"CST", "America/Chicago", "UTC-6"},
+	{"EST", "America/New_York", "UTC-5"},
 	{"AST", "America/Halifax", "UTC-4"},
 	{"NST", "America/St_Johns", "UTC-3:30"},
-	
-	// Central/South America
 	{"BRT", "America/Sao_Paulo", "UTC-3"},
-	{"ART", "America/Argentina/Buenos_Aires", "UTC-3"},
-	{"COT", "America/Bogota", "UTC-5"},
-	{"CLT", "America/Santiago", "UTC-4"},
-	{"PET", "America/Lima", "UTC-5"},
-	{"VET", "America/Caracas", "UTC-4"},
-	{"MEX", "America/Mexico_City", "UTC-6"},
-	
-	// Europe
-	{"GMT", "Europe/London", "UTC+0"},
-	{"WET", "Europe/Lisbon", "UTC+0"},
+	{"GST", "Atlantic/South_Georgia", "UTC-2"},
+	{"AZOT", "Atlantic/Azores", "UTC-1"},
+
+	// UTC+0
+	{"UTC", "UTC", "UTC+0"},
+
+	// UTC+1 to UTC+14
 	{"CET", "Europe/Paris", "UTC+1"},
 	{"EET", "Europe/Helsinki", "UTC+2"},
 	{"MSK", "Europe/Moscow", "UTC+3"},
-	{"IST", "Europe/Dublin", "UTC+0"},
-	{"BST", "Europe/London", "UTC+1"},
-	
-	// Asia
-	{"IST", "Asia/Kolkata", "UTC+5:30"},
+	{"IRST", "Asia/Tehran", "UTC+3:30"},
+	{"GST", "Asia/Dubai", "UTC+4"},
+	{"AFT", "Asia/Kabul", "UTC+4:30"},
 	{"PKT", "Asia/Karachi", "UTC+5"},
+	{"IST", "Asia/Kolkata", "UTC+5:30"},
+	{"NPT", "Asia/Kathmandu", "UTC+5:45"},
+	{"BST", "Asia/Dhaka", "UTC+6"},
+	{"MMT", "Asia/Yangon", "UTC+6:30"},
 	{"ICT", "Asia/Bangkok", "UTC+7"},
-	{"WIB", "Asia/Jakarta", "UTC+7"},
-	{"SGT", "Asia/Singapore", "UTC+8"},
-	{"HKT", "Asia/Hong_Kong", "UTC+8"},
 	{"CST", "Asia/Shanghai", "UTC+8"},
+	{"ACWST", "Australia/Eucla", "UTC+8:45"},
 	{"JST", "Asia/Tokyo", "UTC+9"},
-	{"KST", "Asia/Seoul", "UTC+9"},
-	{"PHT", "Asia/Manila", "UTC+8"},
-	{"THA", "Asia/Bangkok", "UTC+7"},
-	{"MYT", "Asia/Kuala_Lumpur", "UTC+8"},
-	{"UAE", "Asia/Dubai", "UTC+4"},
-	{"TRT", "Europe/Istanbul", "UTC+3"},
-	
-	// Oceania
-	{"AEST", "Australia/Sydney", "UTC+10"},
 	{"ACST", "Australia/Adelaide", "UTC+9:30"},
-	{"AWST", "Australia/Perth", "UTC+8"},
+	{"AEST", "Australia/Sydney", "UTC+10"},
+	{"LHST", "Australia/Lord_Howe", "UTC+10:30"},
+	{"SBT", "Pacific/Guadalcanal", "UTC+11"},
 	{"NZST", "Pacific/Auckland", "UTC+12"},
-	{"FJT", "Pacific/Fiji", "UTC+12"},
-	
-	// Africa
-	{"SAST", "Africa/Johannesburg", "UTC+2"},
-	{"EAT", "Africa/Nairobi", "UTC+3"},
-	{"WAT", "Africa/Lagos", "UTC+1"},
-	{"CAT", "Africa/Harare", "UTC+2"},
-	{"EGY", "Africa/Cairo", "UTC+2"},
-	
-	// UTC
-	{"UTC", "UTC", "UTC+0"},
+	{"CHAST", "Pacific/Chatham", "UTC+12:45"},
+	{"TOT", "Pacific/Tongatapu", "UTC+13"},
+	{"LINT", "Pacific/Kiritimati", "UTC+14"},
 }
 
 // GetCurrentTime returns the current time in the given timezone
