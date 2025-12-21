@@ -1,63 +1,47 @@
 package timezone
 
 import (
+	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/zlasd/tzloc"
 )
 
 // TimezoneInfo represents a timezone with display information
 type TimezoneInfo struct {
-	Abbreviation string // e.g., "EST"
-	IANA         string // e.g., "America/Detroit"
-	Offset       string // e.g., "UTC-5"
+	IANA   string // e.g., "America/New_York"
+	Offset string // e.g., "UTC-5" (dynamically calculated)
 }
 
-// CommonTimezones is a curated list covering all UTC offsets (no duplicates)
-var CommonTimezones = []TimezoneInfo{
-	// UTC-12 to UTC-1
-	{"AoE", "Etc/GMT+12", "UTC-12"},
-	{"SST", "Pacific/Pago_Pago", "UTC-11"},
-	{"HST", "Pacific/Honolulu", "UTC-10"},
-	{"HDT", "Pacific/Marquesas", "UTC-9:30"},
-	{"AKST", "America/Anchorage", "UTC-9"},
-	{"PST", "America/Los_Angeles", "UTC-8"},
-	{"MST", "America/Denver", "UTC-7"},
-	{"CST", "America/Chicago", "UTC-6"},
-	{"EST", "America/New_York", "UTC-5"},
-	{"AST", "America/Halifax", "UTC-4"},
-	{"NST", "America/St_Johns", "UTC-3:30"},
-	{"BRT", "America/Sao_Paulo", "UTC-3"},
-	{"GST", "Atlantic/South_Georgia", "UTC-2"},
-	{"AZOT", "Atlantic/Azores", "UTC-1"},
-
-	// UTC+0
-	{"UTC", "UTC", "UTC+0"},
-
-	// UTC+1 to UTC+14
-	{"CET", "Europe/Paris", "UTC+1"},
-	{"EET", "Europe/Helsinki", "UTC+2"},
-	{"MSK", "Europe/Moscow", "UTC+3"},
-	{"IRST", "Asia/Tehran", "UTC+3:30"},
-	{"GST", "Asia/Dubai", "UTC+4"},
-	{"AFT", "Asia/Kabul", "UTC+4:30"},
-	{"PKT", "Asia/Karachi", "UTC+5"},
-	{"IST", "Asia/Kolkata", "UTC+5:30"},
-	{"NPT", "Asia/Kathmandu", "UTC+5:45"},
-	{"BST", "Asia/Dhaka", "UTC+6"},
-	{"MMT", "Asia/Yangon", "UTC+6:30"},
-	{"ICT", "Asia/Bangkok", "UTC+7"},
-	{"CST", "Asia/Shanghai", "UTC+8"},
-	{"ACWST", "Australia/Eucla", "UTC+8:45"},
-	{"JST", "Asia/Tokyo", "UTC+9"},
-	{"ACST", "Australia/Adelaide", "UTC+9:30"},
-	{"AEST", "Australia/Sydney", "UTC+10"},
-	{"LHST", "Australia/Lord_Howe", "UTC+10:30"},
-	{"SBT", "Pacific/Guadalcanal", "UTC+11"},
-	{"NZST", "Pacific/Auckland", "UTC+12"},
-	{"CHAST", "Pacific/Chatham", "UTC+12:45"},
-	{"TOT", "Pacific/Tongatapu", "UTC+13"},
-	{"LINT", "Pacific/Kiritimati", "UTC+14"},
+// PopularTimezones are shown first when no search query is provided
+var PopularTimezones = []string{
+	"America/New_York",
+	"America/Chicago",
+	"America/Denver",
+	"America/Los_Angeles",
+	"America/Toronto",
+	"America/Vancouver",
+	"Europe/London",
+	"Europe/Paris",
+	"Europe/Berlin",
+	"Europe/Amsterdam",
+	"Europe/Moscow",
+	"Asia/Tokyo",
+	"Asia/Shanghai",
+	"Asia/Hong_Kong",
+	"Asia/Singapore",
+	"Asia/Seoul",
+	"Asia/Kolkata",
+	"Asia/Dubai",
+	"Australia/Sydney",
+	"Australia/Melbourne",
+	"Australia/Perth",
+	"Pacific/Auckland",
+	"Pacific/Honolulu",
+	"UTC",
 }
 
 // GetCurrentTime returns the current time in the given timezone
@@ -69,36 +53,96 @@ func GetCurrentTime(ianaName string) (time.Time, error) {
 	return time.Now().In(loc), nil
 }
 
+// formatOffset formats seconds offset into a readable string like "UTC-5" or "UTC+5:30"
+func formatOffset(offsetSeconds int) string {
+	sign := "+"
+	if offsetSeconds < 0 {
+		sign = "-"
+		offsetSeconds = -offsetSeconds
+	}
+
+	hours := offsetSeconds / 3600
+	minutes := (offsetSeconds % 3600) / 60
+
+	if minutes == 0 {
+		return fmt.Sprintf("UTC%s%d", sign, hours)
+	}
+	return fmt.Sprintf("UTC%s%d:%02d", sign, hours, minutes)
+}
+
+// GetTimezoneInfo creates a TimezoneInfo with dynamically calculated offset
+func GetTimezoneInfo(ianaName string) TimezoneInfo {
+	loc, err := time.LoadLocation(ianaName)
+	if err != nil {
+		return TimezoneInfo{IANA: ianaName, Offset: "UTC"}
+	}
+
+	_, offsetSeconds := time.Now().In(loc).Zone()
+	return TimezoneInfo{
+		IANA:   ianaName,
+		Offset: formatOffset(offsetSeconds),
+	}
+}
+
 // FormatTimezoneChoice formats a timezone for the Discord autocomplete
 func FormatTimezoneChoice(tz TimezoneInfo) string {
 	currentTime, err := GetCurrentTime(tz.IANA)
 	if err != nil {
-		return tz.Abbreviation + " - " + tz.IANA + " - " + tz.Offset
+		return tz.IANA + " (" + tz.Offset + ")"
 	}
 	timeStr := currentTime.Format("3:04 PM")
-	return tz.Abbreviation + " - " + tz.IANA + " - " + tz.Offset + " - " + timeStr
+	return tz.IANA + " (" + tz.Offset + ") - " + timeStr
 }
 
 // SearchTimezones filters timezones based on a search query
 func SearchTimezones(query string) []TimezoneInfo {
 	if query == "" {
-		// Return first 25 (Discord limit)
-		if len(CommonTimezones) > 25 {
-			return CommonTimezones[:25]
+		// Return popular timezones when no search query
+		results := make([]TimezoneInfo, 0, len(PopularTimezones))
+		for _, iana := range PopularTimezones {
+			results = append(results, GetTimezoneInfo(iana))
 		}
-		return CommonTimezones
+		// Limit to 25 (Discord limit)
+		if len(results) > 25 {
+			return results[:25]
+		}
+		return results
 	}
 
 	query = strings.ToLower(query)
+	allLocations := tzloc.GetLocationList()
+
 	var results []TimezoneInfo
 
-	for _, tz := range CommonTimezones {
-		if strings.Contains(strings.ToLower(tz.Abbreviation), query) ||
-			strings.Contains(strings.ToLower(tz.IANA), query) ||
-			strings.Contains(strings.ToLower(tz.Offset), query) {
-			results = append(results, tz)
+	// Search through all IANA timezones
+	for _, iana := range allLocations {
+		if strings.Contains(strings.ToLower(iana), query) {
+			results = append(results, GetTimezoneInfo(iana))
 		}
 	}
+
+	// Also search by offset (e.g., "utc-5", "+5:30")
+	for _, iana := range allLocations {
+		tzInfo := GetTimezoneInfo(iana)
+		if strings.Contains(strings.ToLower(tzInfo.Offset), query) {
+			// Avoid duplicates
+			found := false
+			for _, r := range results {
+				if r.IANA == iana {
+					found = true
+					break
+				}
+			}
+			if !found {
+				results = append(results, tzInfo)
+			}
+		}
+	}
+
+	// Sort by IANA name for consistency
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].IANA < results[j].IANA
+	})
 
 	// Limit to 25 (Discord autocomplete limit)
 	if len(results) > 25 {
@@ -109,8 +153,7 @@ func SearchTimezones(query string) []TimezoneInfo {
 
 // ValidateTimezone checks if a timezone is valid
 func ValidateTimezone(ianaName string) bool {
-	_, err := time.LoadLocation(ianaName)
-	return err == nil
+	return tzloc.ValidLocation(ianaName)
 }
 
 // GetOffset returns the UTC offset for a timezone at the current time
