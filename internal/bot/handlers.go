@@ -526,47 +526,85 @@ func (b *Bot) handleBdsetDefaultTimezone(s *discordgo.Session, i *discordgo.Inte
 	respondEphemeral(s, i, fmt.Sprintf("✅ Default timezone set to %s (current time: %s)", tz, timeDisplay))
 }
 
-// handleBdsetForce opens modal for force-setting a user's birthday
+// handleBdsetForce force-sets a user's birthday from command options
 func (b *Bot) handleBdsetForce(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	opts := i.ApplicationCommandData().Options[0].Options
-	user := opts[0].UserValue(s)
 
-	modal := discordgo.InteractionResponseData{
-		CustomID: "bdset_force_modal:" + user.ID,
-		Title:    fmt.Sprintf("Set Birthday for %s", user.Username),
-		Components: []discordgo.MessageComponent{
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID:    "birthday_date",
-						Label:       "Birthday (e.g., 9/24 or September 24, 2002)",
-						Style:       discordgo.TextInputShort,
-						Placeholder: "Month/Day or Month Day, Year",
-						Required:    true,
-						MaxLength:   50,
-					},
-				},
-			},
-			discordgo.ActionsRow{
-				Components: []discordgo.MessageComponent{
-					discordgo.TextInput{
-						CustomID:    "birthday_timezone",
-						Label:       "Timezone (IANA format)",
-						Style:       discordgo.TextInputShort,
-						Placeholder: "America/Detroit",
-						Required:    false,
-						MaxLength:   50,
-						Value:       "UTC",
-					},
-				},
-			},
-		},
+	var user *discordgo.User
+	var dateStr, tzStr string
+	for _, opt := range opts {
+		switch opt.Name {
+		case "user":
+			user = opt.UserValue(s)
+		case "birthday":
+			dateStr = opt.StringValue()
+		case "timezone":
+			tzStr = opt.StringValue()
+		}
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseModal,
-		Data: &modal,
-	})
+	if user == nil {
+		respondError(s, i, "User is required")
+		return
+	}
+
+	ctx := context.Background()
+	formatSettings := b.GetFormatSettings(ctx, i.GuildID)
+
+	// Get default timezone if not provided
+	if tzStr == "" {
+		gs, err := b.repo.GetGuildSettings(ctx, i.GuildID)
+		if err == nil && gs != nil {
+			tzStr = gs.DefaultTimezone
+		} else {
+			tzStr = "UTC"
+		}
+	}
+
+	// Parse the date with format settings
+	month, day, year, err := ParseDateWithSettings(dateStr, formatSettings)
+	if err != nil {
+		formatHint := "MM/DD"
+		if formatSettings.EuropeanDateFormat {
+			formatHint = "DD/MM"
+		}
+		respondError(s, i, fmt.Sprintf("Invalid date format. Use formats like: %s, September 24, or %s/2002", formatHint, formatHint))
+		return
+	}
+
+	// Validate timezone
+	if !timezone.ValidateTimezone(tzStr) {
+		respondError(s, i, fmt.Sprintf("Invalid timezone: %s. Please select from the autocomplete list.", tzStr))
+		return
+	}
+
+	// Save to database
+	mb := &database.MemberBirthday{
+		GuildID:  i.GuildID,
+		UserID:   user.ID,
+		Month:    month,
+		Day:      day,
+		Year:     year,
+		Timezone: tzStr,
+	}
+
+	if err := b.repo.SetMemberBirthday(ctx, mb); err != nil {
+		slog.Error("Failed to save birthday", "error", err)
+		respondError(s, i, "Failed to save birthday")
+		return
+	}
+
+	slog.Info("Birthday force-set", "guildID", mb.GuildID, "targetUserID", mb.UserID, "adminUserID", i.Member.User.ID)
+
+	// Format confirmation using guild settings
+	dateDisplay := FormatDate(month, day, year, formatSettings)
+	currentTime, _ := timezone.GetCurrentTime(tzStr)
+	timeDisplay := FormatTime(currentTime, formatSettings)
+
+	respondEphemeral(s, i, fmt.Sprintf(
+		"🎂 Birthday for <@%s> has been set to **%s**!\nTimezone: %s (current time: %s)",
+		user.ID, dateDisplay, tzStr, timeDisplay,
+	))
 }
 
 // handleBdsetSettings shows current settings

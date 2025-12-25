@@ -178,6 +178,19 @@ var commands = []*discordgo.ApplicationCommand{
 						Type:        discordgo.ApplicationCommandOptionUser,
 						Required:    true,
 					},
+					{
+						Name:        "birthday",
+						Description: "Birthday (e.g., 9/24 or September 24, 2002)",
+						Type:        discordgo.ApplicationCommandOptionString,
+						Required:    true,
+					},
+					{
+						Name:         "timezone",
+						Description:  "Timezone for the user",
+						Type:         discordgo.ApplicationCommandOptionString,
+						Required:     false,
+						Autocomplete: true,
+					},
 				},
 			},
 			{

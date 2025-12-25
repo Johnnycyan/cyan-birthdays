@@ -77,8 +77,6 @@ func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 		b.handleMsgWithoutYearModal(s, i)
 	case data.CustomID == "bdset_interactive_modal":
 		b.handleInteractiveModal(s, i)
-	case strings.HasPrefix(data.CustomID, "bdset_force_modal:"):
-		b.handleForceModal(s, i)
 	}
 }
 
@@ -288,73 +286,6 @@ func (b *Bot) handleInteractiveModal(s *discordgo.Session, i *discordgo.Interact
 	))
 }
 
-// handleForceModal processes the force-set birthday modal
-func (b *Bot) handleForceModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	data := i.ModalSubmitData()
-	
-	// Extract user ID from custom ID
-	parts := strings.Split(data.CustomID, ":")
-	if len(parts) != 2 {
-		respondError(s, i, "Invalid modal data")
-		return
-	}
-	targetUserID := parts[1]
-
-	var dateStr, tzStr string
-	for _, comp := range data.Components {
-		row := comp.(*discordgo.ActionsRow)
-		for _, c := range row.Components {
-			input := c.(*discordgo.TextInput)
-			switch input.CustomID {
-			case "birthday_date":
-				dateStr = input.Value
-			case "birthday_timezone":
-				tzStr = input.Value
-			}
-		}
-	}
-
-	ctx := context.Background()
-	formatSettings := b.GetFormatSettings(ctx, i.GuildID)
-
-	// Parse the date with format settings
-	month, day, year, err := ParseDateWithSettings(dateStr, formatSettings)
-	if err != nil {
-		formatHint := "MM/DD"
-		if formatSettings.EuropeanDateFormat {
-			formatHint = "DD/MM"
-		}
-		respondError(s, i, fmt.Sprintf("Invalid date format. Use formats like: %s or %s/2002", formatHint, formatHint))
-		return
-	}
-
-	// Validate timezone
-	if tzStr == "" {
-		tzStr = "UTC"
-	}
-	if !timezone.ValidateTimezone(tzStr) {
-		respondError(s, i, fmt.Sprintf("Invalid timezone: %s", tzStr))
-		return
-	}
-
-	// Save to database
-	mb := &database.MemberBirthday{
-		GuildID:  i.GuildID,
-		UserID:   targetUserID,
-		Month:    month,
-		Day:      day,
-		Year:     year,
-		Timezone: tzStr,
-	}
-	
-	if err := b.repo.SetMemberBirthday(ctx, mb); err != nil {
-		respondError(s, i, "Failed to save birthday")
-		return
-	}
-
-	dateDisplay := FormatDate(month, day, year, formatSettings)
-	respondEphemeral(s, i, fmt.Sprintf("✅ Birthday for <@%s> set to **%s** (%s)", targetUserID, dateDisplay, tzStr))
-}
 
 // handleComponent handles button and select menu interactions
 func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
