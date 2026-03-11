@@ -198,7 +198,9 @@ func IsBirthdayToday(month, day int, ianaName string) (bool, error) {
 		return false, err
 	}
 	result := currentMonth == month && currentDay == day
-	slog.Debug("IsBirthdayToday", "timezone", ianaName, "current", currentMonth*100+currentDay, "birthday", month*100+day, "result", result)
+	if result {
+		slog.Debug("IsBirthdayToday", "timezone", ianaName, "current", currentMonth*100+currentDay, "birthday", month*100+day, "result", result)
+	}
 	return result, nil
 }
 

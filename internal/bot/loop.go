@@ -100,7 +100,7 @@ func (b *Bot) processGuildBirthdays(ctx context.Context, gs database.GuildSettin
 
 // processMemberBirthday checks if a member should be announced
 func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettings, bd database.MemberBirthday) {
-	slog.Debug("Checking member birthday", "guild_id", gs.GuildID, "user_id", bd.UserID, "month", bd.Month, "day", bd.Day, "timezone", bd.Timezone)
+	// slog.Debug("Checking member birthday", "guild_id", gs.GuildID, "user_id", bd.UserID, "month", bd.Month, "day", bd.Day, "timezone", bd.Timezone)
 	
 	// Check if it's their birthday in their timezone
 	isBirthday, err := timezone.IsBirthdayToday(bd.Month, bd.Day, bd.Timezone)
@@ -110,7 +110,9 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 		isBirthday, _ = timezone.IsBirthdayToday(bd.Month, bd.Day, "UTC")
 	}
 
-	slog.Debug("Birthday check result", "user_id", bd.UserID, "is_birthday", isBirthday)
+	if isBirthday {
+		slog.Debug("Birthday check result", "user_id", bd.UserID, "is_birthday", isBirthday)
+	}
 
 	if !isBirthday {
 		return
@@ -162,9 +164,15 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 		}
 	}
 
-	if hasRole {
+	// Add database check for idempotency
+	hasActiveRole, err := b.repo.HasActiveBirthdayRole(ctx, gs.GuildID, bd.UserID)
+	if err != nil {
+		slog.Warn("Failed to check active birthday role from DB", "error", err)
+	}
+
+	if hasRole || hasActiveRole {
 		// Already announced today
-		slog.Debug("Member already has birthday role, skipping", "user_id", bd.UserID)
+		slog.Debug("Member already has birthday role or active DB record, skipping", "user_id", bd.UserID)
 		return
 	}
 
