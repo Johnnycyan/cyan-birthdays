@@ -82,16 +82,16 @@ END $$;
 // Migrate runs the database migrations
 func Migrate(pool *pgxpool.Pool) error {
 	ctx := context.Background()
-	
+
 	// Create tables
 	if _, err := pool.Exec(ctx, schema); err != nil {
 		return err
 	}
-	
+
 	// Run migrations for new columns
 	if _, err := pool.Exec(ctx, migrations); err != nil {
 		return err
 	}
-	
+
 	return nil
 }

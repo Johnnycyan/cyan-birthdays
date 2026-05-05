@@ -278,7 +278,7 @@ func (r *Repository) GetAllSetupGuilds(ctx context.Context) ([]GuildSettings, er
 // SetMemberBirthday creates or updates a member's birthday
 func (r *Repository) SetMemberBirthday(ctx context.Context, mb *MemberBirthday) error {
 	slog.Debug("SetMemberBirthday called", "guildID", mb.GuildID, "userID", mb.UserID, "month", mb.Month, "day", mb.Day, "year", mb.Year, "timezone", mb.Timezone)
-	
+
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO member_birthdays (guild_id, user_id, month, day, year, timezone, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -289,7 +289,7 @@ func (r *Repository) SetMemberBirthday(ctx context.Context, mb *MemberBirthday) 
 		    timezone = EXCLUDED.timezone,
 		    updated_at = NOW()
 	`, mb.GuildID, mb.UserID, mb.Month, mb.Day, mb.Year, mb.Timezone)
-	
+
 	if err != nil {
 		slog.Error("SetMemberBirthday failed", "error", err)
 	} else {
@@ -379,7 +379,7 @@ func (r *Repository) GetUpcomingBirthdays(ctx context.Context, guildID string, d
 // GetAllGuildBirthdays retrieves all birthdays for a guild
 func (r *Repository) GetAllGuildBirthdays(ctx context.Context, guildID string) ([]MemberBirthday, error) {
 	slog.Debug("GetAllGuildBirthdays called", "guildID", guildID)
-	
+
 	rows, err := r.pool.Query(ctx, `
 		SELECT guild_id, user_id, month, day, year, timezone, created_at, updated_at
 		FROM member_birthdays WHERE guild_id = $1
@@ -403,7 +403,7 @@ func (r *Repository) GetAllGuildBirthdays(ctx context.Context, guildID string) (
 		}
 		birthdays = append(birthdays, mb)
 	}
-	
+
 	slog.Debug("GetAllGuildBirthdays completed", "guildID", guildID, "count", len(birthdays))
 	return birthdays, nil
 }
@@ -411,7 +411,7 @@ func (r *Repository) GetAllGuildBirthdays(ctx context.Context, guildID string) (
 // SetActiveBirthdayRole records that a user has been given the birthday role
 func (r *Repository) SetActiveBirthdayRole(ctx context.Context, guildID, userID string, expiresAt time.Time) error {
 	slog.Debug("SetActiveBirthdayRole", "guildID", guildID, "userID", userID, "expiresAt", expiresAt)
-	
+
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO active_birthday_roles (guild_id, user_id, role_expires_at)
 		VALUES ($1, $2, $3)
@@ -419,7 +419,7 @@ func (r *Repository) SetActiveBirthdayRole(ctx context.Context, guildID, userID 
 		    role_expires_at = EXCLUDED.role_expires_at,
 		    role_assigned_at = NOW()
 	`, guildID, userID, expiresAt)
-	
+
 	if err != nil {
 		slog.Error("SetActiveBirthdayRole failed", "error", err)
 	}
@@ -429,7 +429,7 @@ func (r *Repository) SetActiveBirthdayRole(ctx context.Context, guildID, userID 
 // GetExpiredBirthdayRoles returns all roles that should be removed
 func (r *Repository) GetExpiredBirthdayRoles(ctx context.Context) ([]ActiveBirthdayRole, error) {
 	slog.Debug("GetExpiredBirthdayRoles called")
-	
+
 	rows, err := r.pool.Query(ctx, `
 		SELECT guild_id, user_id, role_assigned_at, role_expires_at
 		FROM active_birthday_roles
@@ -450,7 +450,7 @@ func (r *Repository) GetExpiredBirthdayRoles(ctx context.Context) ([]ActiveBirth
 		}
 		roles = append(roles, r)
 	}
-	
+
 	slog.Debug("GetExpiredBirthdayRoles completed", "count", len(roles))
 	return roles, nil
 }
@@ -458,7 +458,7 @@ func (r *Repository) GetExpiredBirthdayRoles(ctx context.Context) ([]ActiveBirth
 // DeleteActiveBirthdayRole removes the active role entry
 func (r *Repository) DeleteActiveBirthdayRole(ctx context.Context, guildID, userID string) error {
 	slog.Debug("DeleteActiveBirthdayRole", "guildID", guildID, "userID", userID)
-	
+
 	_, err := r.pool.Exec(ctx, `
 		DELETE FROM active_birthday_roles WHERE guild_id = $1 AND user_id = $2
 	`, guildID, userID)

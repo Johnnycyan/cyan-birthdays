@@ -2,6 +2,7 @@ package bot
 
 import (
 	"log/slog"
+	"sync"
 
 	"github.com/Johnnycyan/cyan-birthdays/internal/config"
 	"github.com/Johnnycyan/cyan-birthdays/internal/database"
@@ -11,11 +12,13 @@ import (
 
 // Bot represents the Discord bot
 type Bot struct {
-	session *discordgo.Session
-	config  *config.Config
-	repo    *database.Repository
-	pool    *pgxpool.Pool
-	stopCh  chan struct{}
+	session   *discordgo.Session
+	config    *config.Config
+	repo      *database.Repository
+	pool      *pgxpool.Pool
+	stopCh    chan struct{}
+	loopOnce  sync.Once
+	processMu sync.Mutex
 }
 
 // New creates a new Bot instance
@@ -54,7 +57,7 @@ func (b *Bot) Start() error {
 // Stop gracefully shuts down the bot
 func (b *Bot) Stop() error {
 	close(b.stopCh)
-	
+
 	// Unregister commands
 	if err := b.unregisterCommands(); err != nil {
 		slog.Warn("Failed to unregister commands", "error", err)
@@ -72,8 +75,8 @@ func (b *Bot) handleReady(s *discordgo.Session, r *discordgo.Ready) {
 		slog.Error("Failed to register commands", "error", err)
 	}
 
-	// Start birthday loop
-	go b.startBirthdayLoop()
+	// Start birthday loop (guarded so reconnects don't spawn duplicate loops)
+	b.loopOnce.Do(func() { go b.startBirthdayLoop() })
 }
 
 // handleInteraction routes interactions to the appropriate handler

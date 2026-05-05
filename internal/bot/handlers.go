@@ -21,7 +21,7 @@ import (
 // handleCommand routes commands to their handlers
 func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ApplicationCommandData()
-	
+
 	switch data.Name {
 	case "birthday":
 		b.handleBirthdayCommand(s, i)
@@ -51,9 +51,9 @@ func (b *Bot) handleBirthdayCommand(s *discordgo.Session, i *discordgo.Interacti
 // handleBirthdaySet sets a user's birthday from command options
 func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	opts := i.ApplicationCommandData().Options[0].Options
-	
+
 	slog.Debug("Birthday set called", "guild", i.GuildID, "user", i.Member.User.ID, "opts_count", len(opts))
-	
+
 	var dateStr, tzStr string
 	for _, opt := range opts {
 		switch opt.Name {
@@ -108,9 +108,9 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 		Year:     year,
 		Timezone: tzStr,
 	}
-	
+
 	slog.Debug("Saving birthday", "guildID", mb.GuildID, "userID", mb.UserID, "month", mb.Month, "day", mb.Day)
-	
+
 	if err := b.repo.SetMemberBirthday(ctx, mb); err != nil {
 		slog.Error("Failed to save birthday", "error", err)
 		respondError(s, i, "Failed to save your birthday")
@@ -123,7 +123,7 @@ func (b *Bot) handleBirthdaySet(s *discordgo.Session, i *discordgo.InteractionCr
 	dateDisplay := FormatDate(month, day, year, formatSettings)
 	currentTime, _ := timezone.GetCurrentTime(tzStr)
 	timeDisplay := FormatTime(currentTime, formatSettings)
-	
+
 	respondEphemeral(s, i, fmt.Sprintf(
 		"🎂 Your birthday has been set to **%s**!\nTimezone: %s (current time: %s)",
 		dateDisplay, tzStr, timeDisplay,
@@ -192,9 +192,9 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 	now := time.Now().UTC()
 	// Truncate to start of day for accurate date comparison
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	
+
 	slog.Debug("Checking upcoming birthdays", "today", today.Format("2006-01-02"), "totalBirthdays", len(birthdays))
-	
+
 	type upcomingBday struct {
 		UserID   string
 		Month    int
@@ -208,16 +208,16 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 	for _, bd := range birthdays {
 		// Calculate days until birthday using date-only comparison
 		thisYearBday := time.Date(now.Year(), time.Month(bd.Month), bd.Day, 0, 0, 0, 0, time.UTC)
-		
+
 		// If birthday this year is before today, use next year
 		if thisYearBday.Before(today) {
 			thisYearBday = thisYearBday.AddDate(1, 0, 0)
 		}
-		
+
 		daysAway := int(thisYearBday.Sub(today).Hours() / 24)
-		
+
 		slog.Debug("Checking birthday", "userID", bd.UserID, "month", bd.Month, "day", bd.Day, "thisYearBday", thisYearBday.Format("2006-01-02"), "daysAway", daysAway)
-		
+
 		if daysAway <= days {
 			// Check if required role is set and user has it
 			if gs.RequiredRoleID != nil {
@@ -226,7 +226,7 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 					slog.Debug("Could not fetch member for role check", "userID", bd.UserID, "error", err)
 					continue // Skip user if we can't check their roles
 				}
-				
+
 				hasRole := false
 				for _, roleID := range member.Roles {
 					if roleID == *gs.RequiredRoleID {
@@ -239,7 +239,7 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 					continue
 				}
 			}
-			
+
 			upcoming = append(upcoming, upcomingBday{
 				UserID:   bd.UserID,
 				Month:    bd.Month,
@@ -285,22 +285,22 @@ func (b *Bot) handleBirthdayUpcoming(s *discordgo.Session, i *discordgo.Interact
 		default:
 			dateKey = fmt.Sprintf("In %d days", bd.DaysAway)
 		}
-		
+
 		// Calculate announcement time in user's timezone, then convert to Unix timestamp
 		loc, err := time.LoadLocation(bd.Timezone)
 		if err != nil {
 			loc = time.UTC
 		}
-		
+
 		// Get the birthday date in user's timezone with announcement hour
 		bdayDate := time.Date(now.Year(), time.Month(bd.Month), bd.Day, announcementHour, 0, 0, 0, loc)
 		if bdayDate.Before(now) && bd.DaysAway > 0 {
 			bdayDate = bdayDate.AddDate(1, 0, 0)
 		}
-		
+
 		// Format as Discord timestamp (shows time only in viewer's local time)
 		timestamp := fmt.Sprintf("<t:%d:t>", bdayDate.Unix())
-		
+
 		mention := fmt.Sprintf("<@%s> - %s", bd.UserID, timestamp)
 		if bd.Year != nil && *bd.Year > 0 {
 			age := now.Year() - *bd.Year
@@ -483,10 +483,10 @@ func (b *Bot) handleBdsetRoleMention(s *discordgo.Session, i *discordgo.Interact
 // handleBdsetRequiredRole sets the required role for birthday announcements
 func (b *Bot) handleBdsetRequiredRole(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	opts := i.ApplicationCommandData().Options[0].Options
-	
+
 	ctx := context.Background()
 	var roleID *string
-	
+
 	if len(opts) > 0 {
 		id := opts[0].RoleValue(s, i.GuildID).ID
 		roleID = &id
@@ -843,17 +843,17 @@ func (b *Bot) handleBdsetImport(s *discordgo.Session, i *discordgo.InteractionCr
 		respondError(s, i, "Failed to verify permissions")
 		return
 	}
-	
+
 	if i.Member.User.ID != app.Owner.ID {
 		respondError(s, i, "This command is only available to the bot owner")
 		return
 	}
 
 	opts := i.ApplicationCommandData().Options[0].Options
-	
+
 	// Get attachment ID from option
 	attachmentID := opts[0].Value.(string)
-	
+
 	// Get attachment from resolved data
 	attachment, ok := i.ApplicationCommandData().Resolved.Attachments[attachmentID]
 	if !ok {
@@ -897,14 +897,14 @@ func (b *Bot) handleBdsetImport(s *discordgo.Session, i *discordgo.InteractionCr
 	var rootData struct {
 		Global json.RawMessage `json:"GLOBAL"`
 		Guild  map[string]struct {
-			TimeUTC          int    `json:"time_utc_s"`
-			MessageWithYear  string `json:"message_w_year"`
+			TimeUTC            int    `json:"time_utc_s"`
+			MessageWithYear    string `json:"message_w_year"`
 			MessageWithoutYear string `json:"message_wo_year"`
-			ChannelID        int64  `json:"channel_id"`
-			RoleID           int64  `json:"role_id"`
-			SetupState       int    `json:"setup_state"`
-			RequireRole      int64  `json:"require_role"`
-			AllowRoleMention bool   `json:"allow_role_mention"`
+			ChannelID          int64  `json:"channel_id"`
+			RoleID             int64  `json:"role_id"`
+			SetupState         int    `json:"setup_state"`
+			RequireRole        int64  `json:"require_role"`
+			AllowRoleMention   bool   `json:"allow_role_mention"`
 		} `json:"GUILD"`
 		Member map[string]map[string]struct {
 			Birthday struct {
@@ -930,7 +930,7 @@ func (b *Bot) handleBdsetImport(s *discordgo.Session, i *discordgo.InteractionCr
 	}
 
 	ctx := context.Background()
-	
+
 	// Get guild's default timezone (or use UTC)
 	defaultTZ := "UTC"
 	gs, err := b.repo.GetGuildSettings(ctx, i.GuildID)
@@ -980,7 +980,7 @@ func (b *Bot) handleBdsetImport(s *discordgo.Session, i *discordgo.InteractionCr
 		if guildConfig, exists := rootData.Guild[i.GuildID]; exists {
 			channelID := strconv.FormatInt(guildConfig.ChannelID, 10)
 			roleID := strconv.FormatInt(guildConfig.RoleID, 10)
-			
+
 			importedGS := &database.GuildSettings{
 				GuildID:            i.GuildID,
 				ChannelID:          &channelID,
@@ -992,7 +992,7 @@ func (b *Bot) handleBdsetImport(s *discordgo.Session, i *discordgo.InteractionCr
 				DefaultTimezone:    defaultTZ,
 				SetupComplete:      guildConfig.SetupState >= 5,
 			}
-			
+
 			if guildConfig.RequireRole > 0 {
 				reqRole := strconv.FormatInt(guildConfig.RequireRole, 10)
 				importedGS.RequiredRoleID = &reqRole
@@ -1016,7 +1016,7 @@ func (b *Bot) checkSetupComplete(ctx context.Context, guildID string) {
 		return
 	}
 
-	complete := gs.ChannelID != nil && gs.RoleID != nil && 
+	complete := gs.ChannelID != nil && gs.RoleID != nil &&
 		gs.MessageWithYear != "" && gs.MessageWithoutYear != ""
 
 	if complete != gs.SetupComplete {

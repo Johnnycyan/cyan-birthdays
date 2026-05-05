@@ -21,7 +21,7 @@ func (b *Bot) startBirthdayLoop() {
 	now := time.Now()
 	nextHour := now.Truncate(time.Hour).Add(time.Hour)
 	timeToNextHour := time.Until(nextHour)
-	
+
 	slog.Info("Scheduling next birthday check", "next_check", nextHour.Format("15:04:05"), "wait_duration", timeToNextHour.String())
 
 	// Wait until the top of the next hour
@@ -51,9 +51,12 @@ func (b *Bot) startBirthdayLoop() {
 
 // processBirthdays checks all guilds for birthdays to announce
 func (b *Bot) processBirthdays() {
+	b.processMu.Lock()
+	defer b.processMu.Unlock()
+
 	ctx := context.Background()
 	now := time.Now()
-	
+
 	slog.Info("Processing birthdays", "current_time_utc", now.UTC().Format("2006-01-02 15:04:05"))
 
 	// First, cleanup any expired birthday roles across all guilds
@@ -71,7 +74,7 @@ func (b *Bot) processBirthdays() {
 	for _, gs := range guilds {
 		b.processGuildBirthdays(ctx, gs)
 	}
-	
+
 	slog.Debug("Birthday processing complete")
 }
 
@@ -101,7 +104,7 @@ func (b *Bot) processGuildBirthdays(ctx context.Context, gs database.GuildSettin
 // processMemberBirthday checks if a member should be announced
 func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettings, bd database.MemberBirthday) {
 	// slog.Debug("Checking member birthday", "guild_id", gs.GuildID, "user_id", bd.UserID, "month", bd.Month, "day", bd.Day, "timezone", bd.Timezone)
-	
+
 	// Check if it's their birthday in their timezone
 	isBirthday, err := timezone.IsBirthdayToday(bd.Month, bd.Day, bd.Timezone)
 	if err != nil {
@@ -194,7 +197,7 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 	// If we're past the announcement hour (bot started late), the base is still today's announcement time
 	// Add 24 hours for expiration
 	expiresAt := announcementTime.Add(24 * time.Hour).UTC()
-	
+
 	slog.Debug("Setting birthday role expiration", "user_id", bd.UserID, "expires_at", expiresAt)
 	if err := b.repo.SetActiveBirthdayRole(ctx, gs.GuildID, bd.UserID, expiresAt); err != nil {
 		slog.Error("Failed to record birthday role expiration", "error", err)
@@ -231,7 +234,7 @@ func (b *Bot) processMemberBirthday(ctx context.Context, gs database.GuildSettin
 // cleanupExpiredBirthdayRoles removes birthday roles that have exceeded their 24h period
 func (b *Bot) cleanupExpiredBirthdayRoles(ctx context.Context) {
 	slog.Debug("Checking for expired birthday roles")
-	
+
 	expiredRoles, err := b.repo.GetExpiredBirthdayRoles(ctx)
 	if err != nil {
 		slog.Error("Failed to get expired birthday roles", "error", err)

@@ -15,7 +15,7 @@ import (
 // handleAutocomplete handles autocomplete interactions
 func (b *Bot) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ApplicationCommandData()
-	
+
 	// Find the focused option
 	var focused *discordgo.ApplicationCommandInteractionDataOption
 	for _, opt := range data.Options {
@@ -67,7 +67,7 @@ func (b *Bot) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionC
 // handleModalSubmit handles modal submissions
 func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
-	
+
 	switch {
 	case data.CustomID == "birthday_set_modal":
 		b.handleBirthdaySetModal(s, i)
@@ -83,7 +83,7 @@ func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 // handleBirthdaySetModal processes birthday set modal submission
 func (b *Bot) handleBirthdaySetModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
-	
+
 	var dateStr, tzStr string
 	for _, comp := range data.Components {
 		row := comp.(*discordgo.ActionsRow)
@@ -130,7 +130,7 @@ func (b *Bot) handleBirthdaySetModal(s *discordgo.Session, i *discordgo.Interact
 		Year:     year,
 		Timezone: tzStr,
 	}
-	
+
 	if err := b.repo.SetMemberBirthday(ctx, mb); err != nil {
 		slog.Error("Failed to save birthday", "error", err)
 		respondError(s, i, "Failed to save your birthday")
@@ -141,7 +141,7 @@ func (b *Bot) handleBirthdaySetModal(s *discordgo.Session, i *discordgo.Interact
 	dateDisplay := FormatDate(month, day, year, formatSettings)
 	currentTime, _ := timezone.GetCurrentTime(tzStr)
 	timeDisplay := FormatTime(currentTime, formatSettings)
-	
+
 	respondEphemeral(s, i, fmt.Sprintf(
 		"🎂 Your birthday has been set to **%s**!\nTimezone: %s (current time: %s)",
 		dateDisplay, tzStr, timeDisplay,
@@ -151,7 +151,7 @@ func (b *Bot) handleBirthdaySetModal(s *discordgo.Session, i *discordgo.Interact
 // handleMsgWithYearModal processes message with year modal
 func (b *Bot) handleMsgWithYearModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
-	
+
 	var message string
 	for _, comp := range data.Components {
 		row := comp.(*discordgo.ActionsRow)
@@ -179,7 +179,7 @@ func (b *Bot) handleMsgWithYearModal(s *discordgo.Session, i *discordgo.Interact
 // handleMsgWithoutYearModal processes message without year modal
 func (b *Bot) handleMsgWithoutYearModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
-	
+
 	var message string
 	for _, comp := range data.Components {
 		row := comp.(*discordgo.ActionsRow)
@@ -207,7 +207,7 @@ func (b *Bot) handleMsgWithoutYearModal(s *discordgo.Session, i *discordgo.Inter
 // handleInteractiveModal processes the interactive setup modal
 func (b *Bot) handleInteractiveModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
-	
+
 	var msgWithYear, msgWithoutYear, timeStr, dateFormatStr, timeFormatStr string
 	for _, comp := range data.Components {
 		row := comp.(*discordgo.ActionsRow)
@@ -240,7 +240,7 @@ func (b *Bot) handleInteractiveModal(s *discordgo.Session, i *discordgo.Interact
 	use24hTime := strings.ToLower(strings.TrimSpace(timeFormatStr)) == "yes"
 
 	ctx := context.Background()
-	
+
 	// Update messages
 	if err := b.repo.UpdateGuildMessageWithYear(ctx, i.GuildID, msgWithYear); err != nil {
 		respondError(s, i, "Failed to update settings")
@@ -285,7 +285,6 @@ func (b *Bot) handleInteractiveModal(s *discordgo.Session, i *discordgo.Interact
 		hour, dateFormatDisplay, timeFormatDisplay,
 	))
 }
-
 
 // handleComponent handles button and select menu interactions
 func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
