@@ -1,10 +1,12 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
-# Install ca-certificates for HTTPS and tzdata for timezone support
-RUN apk --no-cache add ca-certificates tzdata
+# Install ca-certificates for HTTPS and tzdata for timezone support; explicitly
+# upgrade the CA bundle so the eMudhra/emSign distrust (ca-certificates
+# 20261020) is picked up even on a stale base image
+RUN apk add --no-cache --upgrade ca-certificates ca-certificates-bundle tzdata
 
 # Copy go mod files
 COPY go.mod go.sum ./
